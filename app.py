@@ -53,10 +53,13 @@ else:
 if render_elements:
     st.dataframe(league_df, use_container_width=True)
     all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
+    y_axis_option = st.selectbox(
+        "Pick a Parameter to Plot", all_mngrs_all_gws_df.columns.to_list()
+    )
     fig = px.line(
         all_mngrs_all_gws_df,
         x="event",
-        y="total_points",
+        y=y_axis_option,
         color="player_name",
         markers=True,
     )
