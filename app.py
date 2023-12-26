@@ -39,9 +39,14 @@ def get_all_mngrs_all_gws_df(league_df):
 st.title("FPL League Dashboard")
 st.subheader("Input your league ID to view various statistics")
 
-leagueID = st.number_input(
-    "League ID", value=None, placeholder="Type a number...", step=1
-)
+if "leagueID" in st.session_state:
+    leagueID = st.session_state["leagueID"]
+else:
+    leagueID = st.number_input(
+        "League ID", value=None, placeholder="Type a number...", step=1
+    )
+    st.session_state["leagueID"] = leagueID
+
 render_elements = False
 if leagueID is not None:
     render_elements = True
