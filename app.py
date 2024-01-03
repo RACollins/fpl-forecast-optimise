@@ -10,6 +10,13 @@ col_name_change_dict = {
     "player_name": "Manager",
     "entry": "ID",
     "entry_name": "Team Name",
+    "rank": "Rank",
+    "last_rank": "Last Rank",
+    "rank_sort": "Rank Sort",
+    "overall_rank": "Overall Rank",
+    "total": "Total Points",
+    "total_points": "Total Points",
+    "points": "Points",
 }
 
 st.set_page_config(
@@ -49,7 +56,9 @@ def get_all_mngrs_all_gws_df(league_df):
         all_gws_df["Team Name"] = league_df.loc[i, "Team Name"]
         all_gws_df["Manager"] = league_df.loc[i, "Manager"]
         all_gws_df_list.append(all_gws_df)
-    all_mngrs_all_gws_df = pd.concat(all_gws_df_list)
+    all_mngrs_all_gws_df = pd.concat(all_gws_df_list).rename(
+        columns=col_name_change_dict
+    )
     return all_mngrs_all_gws_df
 
 
@@ -63,7 +72,6 @@ leagueID = st.number_input(
 render_elements = False
 if leagueID != None:
     render_elements = True
-    league_df = get_league_data(leagueID)
 else:
     league_df = None
     st.info(
@@ -71,7 +79,7 @@ else:
         "👉 Login to your FPL account  \n"
         "👉 Select the 'Leagues & Cups' tab  \n"
         "👉 Select a league  \n"
-        "👉 ID is in the URL  \n"
+        "👉 Copy ID from the URL  \n"
     )
 
 if render_elements:
@@ -79,15 +87,27 @@ if render_elements:
         st.header("Info...")
     tab1, tab2, tab3 = st.tabs(["Summary", "Graphs", "Analysis"])
     with tab1:
-        st.dataframe(league_df, use_container_width=True)
+        league_df = get_league_data(leagueID)
         all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
-        st.dataframe(all_mngrs_all_gws_df)
+        print(league_df.columns)
+        print(all_mngrs_all_gws_df.columns)
+        max_gw = all_mngrs_all_gws_df["GW"].max()
+        st.dataframe(
+            league_df[
+                ["rank", "Manager", "Team Name", "GW Total", "total"]
+            ].style.format(thousands=""),
+            use_container_width=True,
+        )
+        st.dataframe(all_mngrs_all_gws_df, use_container_width=True)
         y_axis_option = st.selectbox(
             "Pick a Parameter to Plot", all_mngrs_all_gws_df.columns.to_list()
         )
+        gw_range = st.slider("Select GW range", 0, max_gw, (0, max_gw))
         fig = px.line(
-            all_mngrs_all_gws_df,
-            x="event",
+            all_mngrs_all_gws_df[
+                all_mngrs_all_gws_df["GW"].between(gw_range[0], gw_range[1])
+            ],
+            x="GW",
             y=y_axis_option,
             color="Manager",
             markers=True,
