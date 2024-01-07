@@ -1,4 +1,5 @@
 import streamlit as st
+import numpy as np
 import pandas as pd
 import requests
 import json
@@ -17,6 +18,11 @@ col_name_change_dict = {
     "total": "Total Points",
     "total_points": "Total Points",
     "points": "Points",
+    "value": "Value",
+    "bank": "Bank",
+    "event_transfers": "Transfers",
+    "event_transfers_cost": "Transfers Cost",
+    "points_on_bench": "Points On Bench",
 }
 
 st.set_page_config(
@@ -56,9 +62,17 @@ def get_all_mngrs_all_gws_df(league_df):
         all_gws_df["Team Name"] = league_df.loc[i, "Team Name"]
         all_gws_df["Manager"] = league_df.loc[i, "Manager"]
         all_gws_df_list.append(all_gws_df)
-    all_mngrs_all_gws_df = pd.concat(all_gws_df_list).rename(
-        columns=col_name_change_dict
+    all_mngrs_all_gws_df = (
+        pd.concat(all_gws_df_list)
+        .rename(columns=col_name_change_dict)
+        .drop(["Rank", "Rank Sort"], axis=1)
     )
+    ### Add league rank as "Rank"
+    all_mngrs_all_gws_df["Rank"] = np.nan
+    max_gw = all_mngrs_all_gws_df["GW"].max()
+    all_mngrs_all_gws_df["Rank"] = all_mngrs_all_gws_df.groupby("GW")[
+        "Total Points"
+    ].rank(method="min", ascending=False)
     return all_mngrs_all_gws_df
 
 
@@ -89,19 +103,30 @@ if render_elements:
     with tab1:
         league_df = get_league_data(leagueID)
         all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
-        print(league_df.columns)
-        print(all_mngrs_all_gws_df.columns)
         max_gw = all_mngrs_all_gws_df["GW"].max()
         st.dataframe(
             league_df[
-                ["rank", "Manager", "Team Name", "GW Total", "total"]
+                ["Rank", "Manager", "Team Name", "GW Total", "Total Points"]
             ].style.format(thousands=""),
             use_container_width=True,
+            hide_index=True,
         )
-        st.dataframe(all_mngrs_all_gws_df, use_container_width=True)
+        #st.dataframe(all_mngrs_all_gws_df, use_container_width=True)
         y_axis_option = st.selectbox(
-            "Pick a Parameter to Plot", all_mngrs_all_gws_df.columns.to_list()
+            "Pick a Parameter to Plot",
+            [
+                "Points",
+                "Total Points",
+                "Rank",
+                "Overall Rank",
+                "Bank",
+                "Value",
+                "Transfers",
+                "Transfers Cost",
+                "Points On Bench",
+            ],
         )
+        #print(all_mngrs_all_gws_df.columns.to_list())
         gw_range = st.slider("Select GW range", 0, max_gw, (0, max_gw))
         fig = px.line(
             all_mngrs_all_gws_df[
