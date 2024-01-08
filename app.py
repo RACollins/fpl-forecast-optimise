@@ -5,6 +5,34 @@ import requests
 import json
 import plotly.express as px
 
+###################
+### Page Config ###
+###################
+
+st.set_page_config(
+    page_title="FPL stats App",
+    page_icon="⚽",
+    layout="wide",
+    initial_sidebar_state="auto",
+)
+
+st.markdown(
+    """
+    <style>
+    .stSlider [data-baseweb=slider]{
+        justify-content: center;
+        width: 66%;
+        left: 11%;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+#################
+### Constants ###
+#################
+
 col_name_change_dict = {
     "event": "GW",
     "event_total": "GW Total",
@@ -21,16 +49,13 @@ col_name_change_dict = {
     "value": "Value",
     "bank": "Bank",
     "event_transfers": "Transfers",
-    "event_transfers_cost": "Transfers Cost",
-    "points_on_bench": "Points On Bench",
+    "event_transfers_cost": "Transfer Costs",
+    "points_on_bench": "Points on Bench",
 }
 
-st.set_page_config(
-    page_title="FPL stats App",
-    page_icon="⚽",
-    layout="wide",
-    initial_sidebar_state="auto",
-)
+#################
+### Functions ###
+#################
 
 
 @st.cache_data
@@ -67,12 +92,28 @@ def get_all_mngrs_all_gws_df(league_df):
         .rename(columns=col_name_change_dict)
         .drop(["Rank", "Rank Sort"], axis=1)
     )
+    ### Divide by 10
+    all_mngrs_all_gws_df["Bank"] = all_mngrs_all_gws_df["Bank"] * 1e5
+    all_mngrs_all_gws_df["Value"] = all_mngrs_all_gws_df["Value"] * 1e5
     ### Add league rank as "Rank"
     all_mngrs_all_gws_df["Rank"] = np.nan
     max_gw = all_mngrs_all_gws_df["GW"].max()
     all_mngrs_all_gws_df["Rank"] = all_mngrs_all_gws_df.groupby("GW")[
         "Total Points"
     ].rank(method="min", ascending=False)
+    ### Add "Total" columns
+    for col in ["Transfers", "Transfer Costs", "Points on Bench"]:
+        all_mngrs_all_gws_df[f"Total {col}"] = all_mngrs_all_gws_df.groupby("Manager")[
+            col
+        ].cumsum()
+    ### Add "Form" column
+    all_mngrs_all_gws_df["Form"] = (
+        all_mngrs_all_gws_df.groupby("Manager")["Points"]
+        .rolling(window=4, min_periods=1)
+        .mean()
+        .droplevel(0)
+        .div(11)
+    )
     return all_mngrs_all_gws_df
 
 
@@ -107,34 +148,40 @@ if render_elements:
         st.dataframe(
             league_df[
                 ["Rank", "Manager", "Team Name", "GW Total", "Total Points"]
-            ].style.format(thousands=""),
+            ].style.format(thousands=","),
             use_container_width=True,
             hide_index=True,
         )
-        #st.dataframe(all_mngrs_all_gws_df, use_container_width=True)
-        y_axis_option = st.selectbox(
-            "Pick a Parameter to Plot",
-            [
-                "Points",
-                "Total Points",
-                "Rank",
-                "Overall Rank",
-                "Bank",
-                "Value",
-                "Transfers",
-                "Transfers Cost",
-                "Points On Bench",
-            ],
-        )
-        #print(all_mngrs_all_gws_df.columns.to_list())
-        gw_range = st.slider("Select GW range", 0, max_gw, (0, max_gw))
-        fig = px.line(
-            all_mngrs_all_gws_df[
-                all_mngrs_all_gws_df["GW"].between(gw_range[0], gw_range[1])
-            ],
-            x="GW",
-            y=y_axis_option,
-            color="Manager",
-            markers=True,
-        )
-        st.plotly_chart(fig, theme="streamlit", use_container_width=True)
+    with tab2:
+        # st.dataframe(all_mngrs_all_gws_df, use_container_width=True)
+        with st.container(border=True):
+            y_axis_option = st.selectbox(
+                "Pick a Parameter to Plot",
+                [
+                    "Points",
+                    "Total Points",
+                    "Rank",
+                    "Overall Rank",
+                    "Bank",
+                    "Value",
+                    "Form",
+                    "Transfers",
+                    "Transfer Costs",
+                    "Points on Bench",
+                    "Total Transfers",
+                    "Total Transfer Costs",
+                    "Total Points on Bench",
+                ],
+            )
+            # print(all_mngrs_all_gws_df.columns.to_list())
+            gw_range = st.slider("Select GW range", 1, max_gw, (1, max_gw))
+            fig = px.line(
+                all_mngrs_all_gws_df[
+                    all_mngrs_all_gws_df["GW"].between(gw_range[0], gw_range[1])
+                ],
+                x="GW",
+                y=y_axis_option,
+                color="Manager",
+                markers=True,
+            )
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
