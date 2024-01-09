@@ -107,13 +107,9 @@ def get_all_mngrs_all_gws_df(league_df):
             col
         ].cumsum()
     ### Add "Form" column
-    all_mngrs_all_gws_df["Form"] = (
-        all_mngrs_all_gws_df.groupby("Manager")["Points"]
-        .rolling(window=4, min_periods=1)
-        .mean()
-        .droplevel(0)
-        .div(11)
-    )
+    all_mngrs_all_gws_df["Form"] = all_mngrs_all_gws_df.groupby("Manager")[
+        "Points"
+    ].transform(lambda s: s.rolling(4, min_periods=1).mean().div(12))
     return all_mngrs_all_gws_df
 
 
@@ -145,15 +141,25 @@ if render_elements:
         league_df = get_league_data(leagueID)
         all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
         max_gw = all_mngrs_all_gws_df["GW"].max()
+        league_df = league_df.merge(
+            all_mngrs_all_gws_df.loc[
+                all_mngrs_all_gws_df["GW"] == max_gw, ["Manager", "Form"]
+            ],
+            how="inner",
+            on="Manager",
+        )
         st.dataframe(
             league_df[
-                ["Rank", "Manager", "Team Name", "GW Total", "Total Points"]
-            ].style.format(thousands=","),
+                ["Rank", "Manager", "Team Name", "GW Total", "Total Points", "Form"]
+            ].style.format({"Form": "{:.2f}"}, thousands=","),
             use_container_width=True,
             hide_index=True,
         )
     with tab2:
-        # st.dataframe(all_mngrs_all_gws_df, use_container_width=True)
+        # st.dataframe(
+        #    all_mngrs_all_gws_df[all_mngrs_all_gws_df["Manager"] == "Richard Collins"],
+        #    use_container_width=True,
+        # )
         with st.container(border=True):
             y_axis_option = st.selectbox(
                 "Pick a Parameter to Plot",
