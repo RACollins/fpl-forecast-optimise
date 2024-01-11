@@ -67,10 +67,11 @@ def get_league_data(leagueID):
     )
     respose = requests.get(fpl_league_url)
     fpl_league_respose_json = respose.json()
+    league_name = fpl_league_respose_json["league"]["name"]
     league_df = pd.DataFrame(fpl_league_respose_json["standings"]["results"]).rename(
         columns=col_name_change_dict
     )
-    return league_df
+    return league_name, league_df
 
 
 @st.cache_data
@@ -133,13 +134,26 @@ else:
         "👉 Copy ID from the URL  \n"
     )
 
+##############
+### Render ###
+##############
+
 if render_elements:
+    league_name, league_df = get_league_data(leagueID)
+    all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
     with st.sidebar:
+        tab_headers = {"tab1": "Summary", "tab2": "Season Stats.", "tab3": "Teams"}
         st.header("Info...")
-    tab1, tab2, tab3 = st.tabs(["Summary", "Graphs", "Analysis"])
+        st.subheader(tab_headers["tab1"])
+        st.write(
+            "A convenient summary table of leaue standings for the current season. "
+            "Not too dissimilar to the summary table on the official app/website."
+        )
+        st.subheader(tab_headers["tab2"])
+        st.subheader(tab_headers["tab3"])
+    tab1, tab2, tab3 = st.tabs([tab_headers[k] for k, v in tab_headers.items()])
     with tab1:
-        league_df = get_league_data(leagueID)
-        all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
+        st.header(f"{league_name}")
         max_gw = all_mngrs_all_gws_df["GW"].max()
         league_df = league_df.merge(
             all_mngrs_all_gws_df.loc[
@@ -156,6 +170,7 @@ if render_elements:
             hide_index=True,
         )
     with tab2:
+        st.header(f"{league_name}")
         # st.dataframe(
         #    all_mngrs_all_gws_df[all_mngrs_all_gws_df["Manager"] == "Richard Collins"],
         #    use_container_width=True,
@@ -180,7 +195,7 @@ if render_elements:
                 ],
             )
             # print(all_mngrs_all_gws_df.columns.to_list())
-            gw_range = st.slider("Select GW range", 1, max_gw, (1, max_gw))
+            gw_range = st.slider("Select Gameweek Range", 1, max_gw, (1, max_gw))
             fig = px.line(
                 all_mngrs_all_gws_df[
                     all_mngrs_all_gws_df["GW"].between(gw_range[0], gw_range[1])
@@ -190,4 +205,8 @@ if render_elements:
                 color="Manager",
                 markers=True,
             )
+            if y_axis_option in ["Rank", "Overall Rank"]:
+                fig.update_yaxes(autorange="reversed")
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
+    with tab3:
+        st.header(f"{league_name}")
