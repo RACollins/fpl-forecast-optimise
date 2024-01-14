@@ -28,6 +28,15 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+st.markdown(
+    """
+    <style>
+	[data-testid="stHeader"] {
+		background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));
+	}
+    </style>""",
+    unsafe_allow_html=True,
+)
 
 #################
 ### Constants ###
