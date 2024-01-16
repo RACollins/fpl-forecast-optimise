@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import json
 import plotly.express as px
+import time
 
 ###################
 ### Page Config ###
@@ -219,3 +220,11 @@ if render_elements:
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
     with tab3:
         st.header(f"{league_name}")
+        progress_text = "Operation in progress. Please wait."
+        my_bar = st.progress(0, text=progress_text)
+
+        for percent_complete in range(100):
+            time.sleep(1)
+            my_bar.progress(percent_complete + 1, text=progress_text)
+        time.sleep(1)
+        my_bar.empty()
