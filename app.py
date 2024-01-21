@@ -5,6 +5,7 @@ import requests
 import json
 import plotly.express as px
 import time
+import os
 
 ###################
 ### Page Config ###
@@ -25,20 +26,23 @@ st.markdown(
         width: 66%;
         left: 11%;
     }
+
+    [data-testid=stAppViewContainer] {
+        
+    }
+
+    [data-testid="stSidebar"] {
+        background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));
+    }
+
+    [data-testid="stHeader"] {
+        background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));  
+	}
     </style>
     """,
     unsafe_allow_html=True,
 )
-st.markdown(
-    """
-    <style>
-	[data-testid="stHeader"] {
-		background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));
-	}
-    </style>""",
-    unsafe_allow_html=True,
-)
-
+""""""
 #################
 ### Constants ###
 #################
@@ -62,6 +66,7 @@ col_name_change_dict = {
     "event_transfers_cost": "Transfer Costs",
     "points_on_bench": "Points on Bench",
 }
+root_dir_path = os.path.dirname(os.path.realpath(__file__))
 
 #################
 ### Functions ###
@@ -122,6 +127,78 @@ def get_all_mngrs_all_gws_df(league_df):
         "Points"
     ].transform(lambda s: s.rolling(4, min_periods=1).mean().div(12))
     return all_mngrs_all_gws_df
+
+
+@st.cache_data
+def get_players_df():
+    players_df = pd.read_csv(root_dir_path + "/data/external/players_raw.csv").loc[
+        :, ["id", "web_name"]
+    ]
+    return players_df
+
+
+@st.cache_data
+def get_picks_and_teams_dfs(league_df, players_df):
+    team_picks_template = (
+        "https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/"
+    )
+    manager_id_name_dict = pd.Series(
+        league_df["Manager"].values, index=league_df["ID"]
+    ).to_dict()
+    id_name_dict = pd.Series(
+        players_df["web_name"].values, index=players_df["id"]
+    ).to_dict()
+    league_teams_df_list = []
+    league_picks_dict = {}
+    for manager_id in league_df["ID"].values:
+        league_picks_dict[manager_id] = []
+        for gw in range(1, 21):
+            respose = requests.get(
+                team_picks_template.format(manager_id=manager_id, gw=gw)
+            )
+            team_selection_respose_json = respose.json()
+            picks_df = pd.DataFrame(team_selection_respose_json["picks"])
+            picks_df["element"] = picks_df["element"].map(id_name_dict)
+            picks_df["manager_id"] = manager_id
+            picks_df["gw"] = gw
+            picks_df["status"] = np.where(
+                picks_df["is_captain"] == True,
+                "c",
+                np.where(
+                    picks_df["is_vice_captain"] == True,
+                    "v",
+                    np.where(picks_df["multiplier"] == 0, "b", "p"),
+                ),
+            )
+            league_teams_df_list.append(picks_df)
+            league_picks_dict[manager_id] += list(
+                (
+                    picks_df["element"]
+                    + "_"
+                    + picks_df["status"].astype(str)
+                    + "_"
+                    + picks_df["gw"].astype(str)
+                ).values
+            )
+
+    league_teams_df = pd.concat(league_teams_df_list).reset_index(drop=True)
+    league_picks_df = pd.DataFrame(league_picks_dict).rename(
+        columns=manager_id_name_dict
+    )
+    return league_teams_df, league_picks_df
+
+
+def jaccard_sim(df):
+    columns = df.columns
+    jaccard_matrix = np.empty([len(columns), len(columns)])
+    for i, row in enumerate(columns):
+        for j, col in enumerate(columns):
+            jaccard_sim = len(set(df[row]).intersection(set(df[col]))) / len(
+                set(df[row]).union(set(df[col]))
+            )
+            jaccard_matrix[i, j] = jaccard_sim
+    jaccard_sim_df = pd.DataFrame(index=columns, columns=columns, data=jaccard_matrix)
+    return jaccard_sim_df
 
 
 st.title("FPL League Dashboard")
@@ -220,11 +297,18 @@ if render_elements:
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
     with tab3:
         st.header(f"{league_name}")
-        '''progress_text = "Operation in progress. Please wait."
-        my_bar = st.progress(0, text=progress_text)
-
-        for percent_complete in range(100):
-            time.sleep(1)
-            my_bar.progress(percent_complete + 1, text=progress_text)
-        time.sleep(1)
-        my_bar.empty()'''
+        players_df = get_players_df()
+        league_teams_df, league_picks_df = get_picks_and_teams_dfs(
+            league_df, players_df
+        )
+        colorscale = [
+            [0, "rgba(61,23,90,255)"],
+            [0.5, "rgba(70,160,246,255)"],
+            [1, "rgba(72,250,137,255)"],
+        ]
+        sim_df = jaccard_sim(league_picks_df)
+        with st.container(border=True):
+            fig = px.imshow(
+                sim_df, text_auto=False, aspect="auto", color_continuous_scale=colorscale
+            )
+            st.plotly_chart(fig, theme="streamlit", use_container_width=True)
