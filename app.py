@@ -137,8 +137,8 @@ def get_players_df():
     return players_df
 
 
-@st.cache_data
-def get_picks_and_teams_dfs(league_df, players_df):
+@st.cache_data(show_spinner=False)
+def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     team_picks_template = (
         "https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/"
     )
@@ -150,9 +150,11 @@ def get_picks_and_teams_dfs(league_df, players_df):
     ).to_dict()
     league_teams_df_list = []
     league_picks_dict = {}
-    for manager_id in league_df["ID"].values:
+    manager_ids = league_df["ID"].values
+    prog_bar = st.progress(0)
+    for i, manager_id in enumerate(manager_ids):
         league_picks_dict[manager_id] = []
-        for gw in range(1, 21):
+        for j, gw in enumerate(range(1, max_gw + 1)):
             respose = requests.get(
                 team_picks_template.format(manager_id=manager_id, gw=gw)
             )
@@ -180,6 +182,9 @@ def get_picks_and_teams_dfs(league_df, players_df):
                     + picks_df["gw"].astype(str)
                 ).values
             )
+            print(((i * max_gw) + (j + 1)) / (len(manager_ids) * max_gw))
+            prog_bar.progress(((i * max_gw) + (j + 1)) / (len(manager_ids) * max_gw))
+    prog_bar.empty()
 
     league_teams_df = pd.concat(league_teams_df_list).reset_index(drop=True)
     league_picks_df = pd.DataFrame(league_picks_dict).rename(
@@ -281,7 +286,6 @@ if render_elements:
                     "Total Points on Bench",
                 ],
             )
-            # print(all_mngrs_all_gws_df.columns.to_list())
             gw_range = st.slider("Select Gameweek Range", 1, max_gw, (1, max_gw))
             fig = px.line(
                 all_mngrs_all_gws_df[
@@ -298,17 +302,45 @@ if render_elements:
     with tab3:
         st.header(f"{league_name}")
         players_df = get_players_df()
-        league_teams_df, league_picks_df = get_picks_and_teams_dfs(
-            league_df, players_df
-        )
+        with st.spinner(text="Processing data, might take a while..."):
+            league_teams_df, league_picks_df = get_picks_and_teams_dfs(
+                league_df, players_df, max_gw
+            )
         colorscale = [
             [0, "rgba(61,23,90,255)"],
             [0.5, "rgba(70,160,246,255)"],
             [1, "rgba(72,250,137,255)"],
         ]
-        sim_df = jaccard_sim(league_picks_df)
         with st.container(border=True):
+            gw_type = st.radio(
+                "Choose Gameweek Selection Type",
+                ["Single Gameweek", "Multiple Gameweeks"],
+                captions=[
+                    "Team similarity of a single GW",
+                    "Average similarity over multiple GWs",
+                ],
+                horizontal=True,
+            )
+
+            if gw_type == "Single Gameweek":
+                gw_range = st.slider(
+                    "Select Gameweek Range", 1, max_gw, 1, key="single_gw"
+                )
+                gw_select_indx = list(range((gw_range - 1) * 15, gw_range * 15))
+            elif gw_type == "Multiple Gameweeks":
+                gw_range = st.slider(
+                    "Select Gameweek Range", 1, max_gw, (1, max_gw), key="multi_gw"
+                )
+                gw_select_indx = list(range((gw_range[0] - 1) * 15, gw_range[1] * 15))
+            else:
+                gw_select_indx = []
+            
+            st.dataframe(league_picks_df.iloc[gw_select_indx])
+            sim_df = jaccard_sim(league_picks_df.iloc[gw_select_indx])
             fig = px.imshow(
-                sim_df, text_auto=False, aspect="auto", color_continuous_scale=colorscale
+                sim_df,
+                text_auto=False,
+                aspect="auto",
+                color_continuous_scale=colorscale,
             )
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
