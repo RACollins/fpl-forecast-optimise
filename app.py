@@ -4,8 +4,10 @@ import pandas as pd
 import requests
 import json
 import plotly.express as px
-import time
 import os
+import utils
+
+root_dir_path = os.path.dirname(os.path.realpath(__file__))
 
 ###################
 ### Page Config ###
@@ -18,31 +20,37 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
+
+background_img = utils.get_img_as_base64(
+    root_dir_path + "/data/app/wp11906650-fantasy-premier-league-wallpapers.jpg"
+)
+
 st.markdown(
-    """
+    f"""
     <style>
-    .stSlider [data-baseweb=slider]{
-        justify-content: center;
-        width: 66%;
-        left: 11%;
-    }
+    .stSlider [data-baseweb=slider] {{
+    justify-content: center;
+    width: 66%;
+    left: 11%;
+    }}
 
-    [data-testid=stAppViewContainer] {
+    [data-testid=stAppViewContainer] {{
         
-    }
+    }}
 
-    [data-testid="stSidebar"] {
-        background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));
-    }
+    [data-testid="stSidebar"] {{
+        background-image: url("data:image/png;base64,{background_img}");
+        background-size: cover;
+    }}
 
-    [data-testid="stHeader"] {
+    [data-testid="stHeader"] {{
         background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));  
-	}
-    </style>
-    """,
+    }}
+        </style>
+        """,
     unsafe_allow_html=True,
 )
-""""""
+
 #################
 ### Constants ###
 #################
@@ -66,7 +74,7 @@ col_name_change_dict = {
     "event_transfers_cost": "Transfer Costs",
     "points_on_bench": "Points on Bench",
 }
-root_dir_path = os.path.dirname(os.path.realpath(__file__))
+
 
 #################
 ### Functions ###
@@ -131,7 +139,7 @@ def get_all_mngrs_all_gws_df(league_df):
 
 @st.cache_data
 def get_players_df():
-    players_df = pd.read_csv(root_dir_path + "/data/external/players_raw.csv").loc[
+    players_df = pd.read_csv(root_dir_path + "/data/app/players_raw.csv").loc[
         :, ["id", "web_name"]
     ]
     return players_df
@@ -182,7 +190,6 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
                     + picks_df["gw"].astype(str)
                 ).values
             )
-            print(((i * max_gw) + (j + 1)) / (len(manager_ids) * max_gw))
             prog_bar.progress(((i * max_gw) + (j + 1)) / (len(manager_ids) * max_gw))
     prog_bar.empty()
 
@@ -193,18 +200,9 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     return league_teams_df, league_picks_df
 
 
-def jaccard_sim(df):
-    columns = df.columns
-    jaccard_matrix = np.empty([len(columns), len(columns)])
-    for i, row in enumerate(columns):
-        for j, col in enumerate(columns):
-            jaccard_sim = len(set(df[row]).intersection(set(df[col]))) / len(
-                set(df[row]).union(set(df[col]))
-            )
-            jaccard_matrix[i, j] = jaccard_sim
-    jaccard_sim_df = pd.DataFrame(index=columns, columns=columns, data=jaccard_matrix)
-    return jaccard_sim_df
-
+##################
+### App proper ###
+##################
 
 st.title("FPL League Dashboard")
 st.subheader("Input your league ID to view various statistics")
@@ -236,13 +234,15 @@ if render_elements:
     with st.sidebar:
         tab_headers = {"tab1": "Summary", "tab2": "Season Stats.", "tab3": "Teams"}
         st.header("Info...")
-        st.subheader(tab_headers["tab1"])
-        st.write(
-            "A convenient summary table of leaue standings for the current season. "
-            "Not too dissimilar to the summary table on the official app/website."
-        )
-        st.subheader(tab_headers["tab2"])
-        st.subheader(tab_headers["tab3"])
+        with st.expander(tab_headers["tab1"]):
+            st.write(
+                "A convenient summary table of leaue standings for the current season. "
+                "Not too dissimilar to the summary table on the official app/website."
+            )
+        with st.expander(tab_headers["tab2"]):
+            st.write("Nothing yet...")
+        with st.expander(tab_headers["tab3"]):
+            st.write("Nothing yet...")
     tab1, tab2, tab3 = st.tabs([tab_headers[k] for k, v in tab_headers.items()])
     with tab1:
         st.header(f"{league_name}")
@@ -263,10 +263,6 @@ if render_elements:
         )
     with tab2:
         st.header(f"{league_name}")
-        # st.dataframe(
-        #    all_mngrs_all_gws_df[all_mngrs_all_gws_df["Manager"] == "Richard Collins"],
-        #    use_container_width=True,
-        # )
         with st.container(border=True):
             y_axis_option = st.selectbox(
                 "Pick a Parameter to Plot",
@@ -294,6 +290,7 @@ if render_elements:
                 x="GW",
                 y=y_axis_option,
                 color="Manager",
+                color_discrete_sequence=px.colors.qualitative.Plotly,
                 markers=True,
             )
             if y_axis_option in ["Rank", "Overall Rank"]:
@@ -334,13 +331,13 @@ if render_elements:
                 gw_select_indx = list(range((gw_range[0] - 1) * 15, gw_range[1] * 15))
             else:
                 gw_select_indx = []
-            
-            st.dataframe(league_picks_df.iloc[gw_select_indx])
-            sim_df = jaccard_sim(league_picks_df.iloc[gw_select_indx])
+
+            sim_df = utils.jaccard_sim(league_picks_df.iloc[gw_select_indx])
             fig = px.imshow(
                 sim_df,
                 text_auto=False,
                 aspect="auto",
                 color_continuous_scale=colorscale,
+                labels=dict(x="Manager 1", y="Manager 2", color="Similarity"),
             )
             st.plotly_chart(fig, theme="streamlit", use_container_width=True)
