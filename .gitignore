@@ -160,5 +160,5 @@ cython_debug/
 #.idea/
 
 # Extras
-*.csv
+data/external/wine_quality/*.csv
 *.names
