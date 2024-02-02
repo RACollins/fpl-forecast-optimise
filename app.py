@@ -98,10 +98,10 @@ def get_league_data(leagueID):
     fpl_league_url = (
         f"https://fantasy.premierleague.com/api/leagues-classic/{leagueID}/standings/"
     )
-    respose = requests.get(fpl_league_url)
-    fpl_league_respose_json = respose.json()
-    league_name = fpl_league_respose_json["league"]["name"]
-    league_df = pd.DataFrame(fpl_league_respose_json["standings"]["results"]).rename(
+    response = requests.get(fpl_league_url)
+    fpl_league_response_json = response.json()
+    league_name = fpl_league_response_json["league"]["name"]
+    league_df = pd.DataFrame(fpl_league_response_json["standings"]["results"]).rename(
         columns=col_name_change_dict
     )
     return league_name, league_df
@@ -118,14 +118,16 @@ def get_all_mngrs_all_gws_df(league_df):
     percent_completed = st.empty()
     prog_bar = st.progress(0)
     for i, manager_id in enumerate(manager_ids):
-        respose = requests.get(all_gws_url_template.format(manager_id=manager_id))
-        all_gws_respose_json = respose.json()
-        all_gws_df = pd.DataFrame(all_gws_respose_json["current"])
+        response = requests.get(all_gws_url_template.format(manager_id=manager_id))
+        all_gws_response_json = response.json()
+        all_gws_df = pd.DataFrame(all_gws_response_json["current"])
         all_gws_df["ID"] = manager_id
         all_gws_df["Team Name"] = league_df.loc[i, "Team Name"]
         all_gws_df["Manager"] = league_df.loc[i, "Manager"]
         all_gws_df_list.append(all_gws_df)
-        managers_completed.text("({0}/{1}) Managers completed".format(i, len(manager_ids)))
+        managers_completed.text(
+            "({0}/{1}) Managers completed".format(i, len(manager_ids))
+        )
         percent_completed.text("{0:.3f} %".format(100 * ((i + 1) / len(manager_ids))))
         prog_bar.progress((i + 1) / len(manager_ids))
     managers_completed.empty()
@@ -185,13 +187,15 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     prog_bar = st.progress(0)
     for i, manager_id in enumerate(manager_ids):
         league_picks_dict[manager_id] = []
-        managers_completed.text("({0}/{1}) Managers completed".format(i, len(manager_ids)))
+        managers_completed.text(
+            "({0}/{1}) Managers completed".format(i, len(manager_ids))
+        )
         for j, gw in enumerate(range(1, max_gw + 1)):
-            respose = requests.get(
+            response = requests.get(
                 team_picks_template.format(manager_id=manager_id, gw=gw)
             )
-            team_selection_respose_json = respose.json()
-            picks_df = pd.DataFrame(team_selection_respose_json["picks"])
+            team_selection_response_json = response.json()
+            picks_df = pd.DataFrame(team_selection_response_json["picks"])
             picks_df["element"] = picks_df["element"].map(id_name_dict)
             picks_df["manager_id"] = manager_id
             picks_df["gw"] = gw
@@ -244,7 +248,10 @@ def main():
     st.subheader("Input your league ID to view various statistics")
 
     leagueID = st.number_input(
-        "League ID", value=None, placeholder="Type your league ID here and press ↳ENTER", step=1
+        "League ID",
+        value=None,
+        placeholder="Type your league ID here and press ↳ENTER",
+        step=1,
     )
 
     render_elements = False
@@ -270,12 +277,18 @@ def main():
             all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
         players_df = get_players_df()
         max_gw = all_mngrs_all_gws_df["GW"].max()
-        with st.spinner(text="(2/2) Collecting and processing team selection data, might take a while..."):
+        with st.spinner(
+            text="(2/2) Collecting and processing team selection data, might take a while..."
+        ):
             league_teams_df, league_picks_df = get_picks_and_teams_dfs(
                 league_df, players_df, max_gw
             )
         with st.sidebar:
-            tab_headers = {"tab1": "Summary", "tab2": "Season Stats.", "tab3": "Team Similarity"}
+            tab_headers = {
+                "tab1": "Summary",
+                "tab2": "Season Stats.",
+                "tab3": "Team Similarity",
+            }
             st.header("Info...")
             with st.expander(tab_headers["tab1"]):
                 st.write(
