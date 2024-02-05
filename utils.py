@@ -20,3 +20,10 @@ def get_img_as_base64(file):
     with open(file, "rb") as f:
         data = f.read()
     return base64.b64encode(data).decode()
+
+def human_readable(num):
+    if num > 1000000:
+        if not num % 1000000:
+            return f"{num // 1000000}M"
+        return f"{round(num / 1000000, 1)}M"
+    return f"{num // 1000}K"

@@ -1,4 +1,5 @@
 import streamlit as st
+import datetime as datetime
 import numpy as np
 import pandas as pd
 import requests
@@ -78,6 +79,10 @@ col_name_change_dict = {
     "event_transfers": "Transfers",
     "event_transfers_cost": "Transfer Costs",
     "points_on_bench": "Points on Bench",
+    "element_in": "Player_in",
+    "element_out": "Player_out",
+    "element_in_cost": "Player_in_cost",
+    "element_out_cost": "Player_out_cost",
 }
 heatmap_colourscale = [
     [0, "rgba(61,23,90,255)"],
@@ -107,7 +112,7 @@ def get_league_data(leagueID):
     return league_name, league_df
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_all_mngrs_all_gws_df(league_df):
     all_gws_url_template = (
         "https://fantasy.premierleague.com/api/entry/{manager_id}/history/"
@@ -143,7 +148,7 @@ def get_all_mngrs_all_gws_df(league_df):
     all_mngrs_all_gws_df["Value"] = all_mngrs_all_gws_df["Value"] * 1e5
     ### Add league rank as "Rank"
     all_mngrs_all_gws_df["Rank"] = np.nan
-    max_gw = all_mngrs_all_gws_df["GW"].max()
+    # max_gw = all_mngrs_all_gws_df["GW"].max()
     all_mngrs_all_gws_df["Rank"] = all_mngrs_all_gws_df.groupby("GW")[
         "Total Points"
     ].rank(method="min", ascending=False)
@@ -167,7 +172,7 @@ def get_players_df():
     return players_df
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=1200, show_spinner=False)
 def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     team_picks_template = (
         "https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/"
@@ -238,6 +243,41 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     return league_teams_df, league_picks_df
 
 
+@st.cache_data(ttl=1200, show_spinner=False)
+def get_managers_transfers_df(league_df, players_df):
+    transfers_url_template = (
+        "https://fantasy.premierleague.com/api/entry/{manager_id}/transfers/"
+    )
+    manager_id_name_dict = pd.Series(
+        league_df["Manager"].values, index=league_df["ID"]
+    ).to_dict()
+    id_name_dict = pd.Series(
+        players_df["web_name"].values, index=players_df["id"]
+    ).to_dict()
+    transfers_dfs_list = []
+    for manager_id in league_df["ID"].values:
+        response = requests.get(transfers_url_template.format(manager_id=manager_id))
+        transfers_response_json = response.json()
+        if not transfers_response_json:
+            continue
+        transfers_df = pd.DataFrame(transfers_response_json)
+        transfers_df["element_in"] = transfers_df["element_in"].map(id_name_dict)
+        transfers_df["element_in_cost"] = (transfers_df["element_in_cost"] * 1e5).apply(
+            lambda n: utils.human_readable(n)
+        )
+        transfers_df["element_out"] = transfers_df["element_out"].map(id_name_dict)
+        transfers_df["element_out_cost"] = (
+            transfers_df["element_out_cost"] * 1e5
+        ).apply(lambda n: utils.human_readable(n))
+        transfers_df["manager_id"] = manager_id
+        transfers_df["Manager"] = manager_id_name_dict[manager_id]
+        transfers_dfs_list.append(transfers_df)
+    all_managers_transfers_df = pd.concat(transfers_dfs_list).rename(
+        columns=col_name_change_dict
+    )
+    return all_managers_transfers_df
+
+
 ##################
 ### App proper ###
 ##################
@@ -288,6 +328,7 @@ def main():
                 "tab1": "Summary",
                 "tab2": "Season Stats.",
                 "tab3": "Team Similarity",
+                "tab4": "Transfers",
             }
             st.header("Info...")
             with st.expander(tab_headers["tab1"]):
@@ -305,7 +346,15 @@ def main():
                     "Check which managers have had similar team selections for a given gameweek. "
                     "Or, select a range of gameweeks to find the average similarity."
                 )
-        tab1, tab2, tab3 = st.tabs([tab_headers[k] for k, v in tab_headers.items()])
+            with st.expander(tab_headers["tab4"]):
+                st.write(
+                    "Ever wondered which players other mangers have transfered? and when? "
+                    "Then this graph is for you! Zoom in to see multiple tranfers in a single transaction. "
+                    "NOTE: Can only see transfers *after* the gameweek deadline"
+                )
+        tab1, tab2, tab3, tab4 = st.tabs(
+            [tab_headers[k] for k, v in tab_headers.items()]
+        )
         with tab1:
             st.header(f"{league_name}")
             league_df = league_df.merge(
@@ -362,7 +411,6 @@ def main():
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with tab3:
             st.header(f"{league_name}")
-            # st.dataframe(league_teams_df)
 
             with st.container(border=True):
                 gw_type = st.radio(
@@ -398,6 +446,61 @@ def main():
                     color_continuous_scale=heatmap_colourscale,
                     labels=dict(x="Manager 1", y="Manager 2", color="Similarity"),
                 )
+                st.plotly_chart(fig, theme="streamlit", use_container_width=True)
+        with tab4:
+            st.header(f"{league_name}")
+            with st.container(border=True):
+                all_managers_transfers_df = get_managers_transfers_df(
+                    league_df, players_df
+                )
+                bootstrap_static_url = (
+                    "https://fantasy.premierleague.com/api/bootstrap-static/"
+                )
+                response = requests.get(bootstrap_static_url)
+                bootstrap_static_response = response.json()
+                bootstrap_static_df = pd.DataFrame(bootstrap_static_response["events"])
+                fig = (
+                    px.scatter(
+                        all_managers_transfers_df,
+                        x="time",
+                        y="Manager",
+                        color="Manager",
+                        hover_name=None,
+                        hover_data={
+                            "Manager": True,
+                            "time": False,
+                            "Player_in": True,
+                            "Player_in_cost": True,
+                            "Player_out": True,
+                            "Player_out_cost": True,
+                            "GW": False,
+                        },
+                    )
+                    .update_xaxes(
+                        rangeslider_visible=True,
+                        range=[
+                            str(bootstrap_static_df.loc[max_gw - 2, "deadline_time"])[
+                                :10
+                            ],
+                            str(bootstrap_static_df.loc[max_gw, "deadline_time"])[:10],
+                        ],
+                    )
+                    .update_layout(
+                        showlegend=True, yaxis_type="category", hovermode="x unified"
+                    )
+                )
+                for gw in range(1, 39):
+                    fig.add_vline(
+                        x=datetime.datetime.strptime(
+                            bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
+                        ).timestamp()
+                        * 1000,
+                        line_width=1,
+                        line_dash="dash",
+                        line_color="red",
+                        annotation_text=f"Gameweek {gw} Deadline",
+                        annotation_position="top",
+                    )
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
 
