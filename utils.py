@@ -1,7 +1,15 @@
 import numpy as np
 import pandas as pd
 import base64
+import requests
 
+
+def get_requests_response(url_template, **kwargs):
+    response = requests.get(
+        url_template.format(**kwargs)
+            )
+    response_json = response.json()
+    return response_json
 
 def jaccard_sim(df):
     columns = df.columns

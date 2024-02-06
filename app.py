@@ -100,11 +100,12 @@ heatmap_colourscale = [
 def get_league_data(leagueID):
     if not isinstance(leagueID, int):
         leagueID = int(leagueID)
-    fpl_league_url = (
-        f"https://fantasy.premierleague.com/api/leagues-classic/{leagueID}/standings/"
+    fpl_league_url_template = (
+        "https://fantasy.premierleague.com/api/leagues-classic/{leagueID}/standings/"
     )
-    response = requests.get(fpl_league_url)
-    fpl_league_response_json = response.json()
+    fpl_league_response_json = utils.get_requests_response(
+        fpl_league_url_template, leagueID=leagueID
+    )
     league_name = fpl_league_response_json["league"]["name"]
     league_df = pd.DataFrame(fpl_league_response_json["standings"]["results"]).rename(
         columns=col_name_change_dict
@@ -112,7 +113,7 @@ def get_league_data(leagueID):
     return league_name, league_df
 
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_all_mngrs_all_gws_df(league_df):
     all_gws_url_template = (
         "https://fantasy.premierleague.com/api/entry/{manager_id}/history/"
@@ -123,8 +124,9 @@ def get_all_mngrs_all_gws_df(league_df):
     percent_completed = st.empty()
     prog_bar = st.progress(0)
     for i, manager_id in enumerate(manager_ids):
-        response = requests.get(all_gws_url_template.format(manager_id=manager_id))
-        all_gws_response_json = response.json()
+        all_gws_response_json = utils.get_requests_response(
+            all_gws_url_template, manager_id=manager_id
+        )
         all_gws_df = pd.DataFrame(all_gws_response_json["current"])
         all_gws_df["ID"] = manager_id
         all_gws_df["Team Name"] = league_df.loc[i, "Team Name"]
@@ -148,7 +150,6 @@ def get_all_mngrs_all_gws_df(league_df):
     all_mngrs_all_gws_df["Value"] = all_mngrs_all_gws_df["Value"] * 1e5
     ### Add league rank as "Rank"
     all_mngrs_all_gws_df["Rank"] = np.nan
-    # max_gw = all_mngrs_all_gws_df["GW"].max()
     all_mngrs_all_gws_df["Rank"] = all_mngrs_all_gws_df.groupby("GW")[
         "Total Points"
     ].rank(method="min", ascending=False)
@@ -172,7 +173,7 @@ def get_players_df():
     return players_df
 
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     team_picks_template = (
         "https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/"
@@ -196,10 +197,9 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
             "({0}/{1}) Managers completed".format(i, len(manager_ids))
         )
         for j, gw in enumerate(range(1, max_gw + 1)):
-            response = requests.get(
-                team_picks_template.format(manager_id=manager_id, gw=gw)
+            team_selection_response_json = utils.get_requests_response(
+                team_picks_template, manager_id=manager_id, gw=gw
             )
-            team_selection_response_json = response.json()
             picks_df = pd.DataFrame(team_selection_response_json["picks"])
             picks_df["element"] = picks_df["element"].map(id_name_dict)
             picks_df["manager_id"] = manager_id
@@ -243,7 +243,7 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     return league_teams_df, league_picks_df
 
 
-@st.cache_data(ttl=1200, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_managers_transfers_df(league_df, players_df):
     transfers_url_template = (
         "https://fantasy.premierleague.com/api/entry/{manager_id}/transfers/"
@@ -256,8 +256,9 @@ def get_managers_transfers_df(league_df, players_df):
     ).to_dict()
     transfers_dfs_list = []
     for manager_id in league_df["ID"].values:
-        response = requests.get(transfers_url_template.format(manager_id=manager_id))
-        transfers_response_json = response.json()
+        transfers_response_json = utils.get_requests_response(
+            transfers_url_template, manager_id=manager_id
+        )
         if not transfers_response_json:
             continue
         transfers_df = pd.DataFrame(transfers_response_json)
@@ -323,6 +324,9 @@ def main():
             league_teams_df, league_picks_df = get_picks_and_teams_dfs(
                 league_df, players_df, max_gw
             )
+        # st.dataframe(league_teams_df)
+        all_managers_transfers_df = get_managers_transfers_df(league_df, players_df)
+        bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
         with st.sidebar:
             tab_headers = {
                 "tab1": "Summary",
@@ -450,12 +454,6 @@ def main():
         with tab4:
             st.header(f"{league_name}")
             with st.container(border=True):
-                all_managers_transfers_df = get_managers_transfers_df(
-                    league_df, players_df
-                )
-                bootstrap_static_url = (
-                    "https://fantasy.premierleague.com/api/bootstrap-static/"
-                )
                 response = requests.get(bootstrap_static_url)
                 bootstrap_static_response = response.json()
                 bootstrap_static_df = pd.DataFrame(bootstrap_static_response["events"])
@@ -465,6 +463,7 @@ def main():
                         x="time",
                         y="Manager",
                         color="Manager",
+                        color_discrete_sequence=px.colors.qualitative.Plotly,
                         hover_name=None,
                         hover_data={
                             "Manager": True,
