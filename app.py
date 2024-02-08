@@ -30,32 +30,6 @@ background_img = utils.get_img_as_base64(
     root_dir_path + "/data/app/wp2598920-white-wallpaper.jpg"
 )
 
-st.markdown(
-    f"""
-    <style>
-    .stSlider [data-baseweb=slider] {{
-    justify-content: center;
-    width: 66%;
-    left: 11%;
-    }}
-
-    [data-testid=stAppViewContainer] {{
-        background-image: url("data:image/png;base64,{background_img}");
-        background-size: cover;
-    }}
-
-    [data-testid="stSidebar"] {{
-        background-image: url("data:image/png;base64,{sidebar_img}");
-        background-size: cover;
-    }}
-
-    [data-testid="stHeader"] {{
-        background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));  
-    }}
-        </style>
-        """,
-    unsafe_allow_html=True,
-)
 
 #################
 ### Constants ###
@@ -94,6 +68,18 @@ heatmap_colourscale = [
 #################
 ### Functions ###
 #################
+
+
+def inject_custom_css():
+    with open(root_dir_path + "/data/app/CSS/styles.txt") as f:
+        css_sheet = str(f.read()).format(
+            sidebar_img=sidebar_img, background_img=background_img
+        )
+        st.markdown(
+            """<style>{}</style>""".format(css_sheet),
+            unsafe_allow_html=True,
+        )
+    return None
 
 
 @st.cache_data
@@ -285,6 +271,7 @@ def get_managers_transfers_df(league_df, players_df):
 
 
 def main():
+    inject_custom_css()
     st.title("FPL League Dashboard")
     st.subheader("Input your league ID to view various statistics")
 
@@ -352,9 +339,9 @@ def main():
                 )
             with st.expander(tab_headers["tab4"]):
                 st.write(
-                    "Ever wondered which players other mangers have transfered? and when? "
+                    "Ever wondered which players your fellow mangers have transfered? and when? "
                     "Then this graph is for you! Zoom in to see multiple tranfers in a single transaction. "
-                    "NOTE: Can only see transfers *after* the gameweek deadline"
+                    "NOTE: Can only see transfers *after* the gameweek deadline. "
                 )
         tab1, tab2, tab3, tab4 = st.tabs(
             [tab_headers[k] for k, v in tab_headers.items()]
@@ -454,8 +441,9 @@ def main():
         with tab4:
             st.header(f"{league_name}")
             with st.container(border=True):
-                response = requests.get(bootstrap_static_url)
-                bootstrap_static_response = response.json()
+                bootstrap_static_response = utils.get_requests_response(
+                    bootstrap_static_url, kwars={}
+                )
                 bootstrap_static_df = pd.DataFrame(bootstrap_static_response["events"])
                 fig = (
                     px.scatter(
