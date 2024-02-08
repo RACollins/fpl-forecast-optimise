@@ -1,0 +1,21 @@
+.st-emotion-cache-14fqkar.ezrtsby2 {{
+    background-image: linear-gradient(90deg, rgba(70,160,248,255), rgba(74,254,141,255));
+}}
+
+.st-emotion-cache-zmjfe7.eczjsme11 {{
+    background-image: url("data:image/png;base64,{sidebar_img}");
+    background-size: cover;
+}}
+
+.appview-container.st-emotion-cache-1wrcr25.ea3mdgi4 {{
+    background-image: url("data:image/png;base64,{background_img}");
+    background-size: cover;
+}}
+
+.stSlider [data-baseweb=slider] {{
+    justify-content: center;
+    width: 66%;
+    left: 11%;
+}}
+
+footer {{visibility: hidden;}}
