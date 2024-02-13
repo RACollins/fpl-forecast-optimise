@@ -2,8 +2,6 @@ import streamlit as st
 import datetime as datetime
 import numpy as np
 import pandas as pd
-import requests
-import json
 import plotly.express as px
 import os
 import utils
@@ -311,7 +309,7 @@ def main():
             league_teams_df, league_picks_df = get_picks_and_teams_dfs(
                 league_df, players_df, max_gw
             )
-        # st.dataframe(league_teams_df)
+        st.dataframe(league_teams_df)
         all_managers_transfers_df = get_managers_transfers_df(league_df, players_df)
         bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
         with st.sidebar:
