@@ -197,13 +197,15 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
                     np.where(picks_df["multiplier"] == 0, "b", "p"),
                 ),
             )
+            picks_df["Player"] = list(
+                (
+                    picks_df["element"] + " (" + picks_df["status"].astype(str) + ")"
+                ).values
+            )
             league_teams_df_list.append(picks_df)
             league_picks_dict[manager_id] += list(
                 (
-                    picks_df["element"]
-                    + "_"
-                    + picks_df["status"].astype(str)
-                    + "_"
+                    picks_df["Player"]
                     + picks_df["gw"].astype(str)
                 ).values
             )
