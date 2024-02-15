@@ -194,20 +194,22 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
                 np.where(
                     picks_df["is_vice_captain"] == True,
                     "v",
-                    np.where(picks_df["multiplier"] == 0, "b", "p"),
+                    np.where(
+                        (picks_df["multiplier"] == 0)
+                        | (picks_df["position"].isin([12, 13, 14, 15])),
+                        "b",
+                        "p",
+                    ),
                 ),
             )
-            picks_df["Player"] = list(
+            picks_df["player_pick"] = list(
                 (
                     picks_df["element"] + " (" + picks_df["status"].astype(str) + ")"
                 ).values
             )
             league_teams_df_list.append(picks_df)
             league_picks_dict[manager_id] += list(
-                (
-                    picks_df["Player"]
-                    + picks_df["gw"].astype(str)
-                ).values
+                (picks_df["player_pick"] + picks_df["gw"].astype(str)).values
             )
             gws_completed.text("({0}/{1}) Gameweeks completed".format(j, max_gw))
             percent_completed.text(
@@ -223,6 +225,9 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
     prog_bar.empty()
 
     league_teams_df = pd.concat(league_teams_df_list).reset_index(drop=True)
+    league_teams_df = league_teams_df.replace(
+        {"manager_id": manager_id_name_dict}
+    ).rename(columns={"manager_id": "Manager"})
     league_picks_df = pd.DataFrame(league_picks_dict).rename(
         columns=manager_id_name_dict
     )
@@ -311,7 +316,7 @@ def main():
             league_teams_df, league_picks_df = get_picks_and_teams_dfs(
                 league_df, players_df, max_gw
             )
-        st.dataframe(league_teams_df)
+        # st.dataframe(league_teams_df)
         all_managers_transfers_df = get_managers_transfers_df(league_df, players_df)
         bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
         with st.sidebar:
@@ -319,7 +324,8 @@ def main():
                 "tab1": "Summary",
                 "tab2": "Season Stats.",
                 "tab3": "Team Similarity",
-                "tab4": "Transfers",
+                "tab4": "Team Comparison",
+                "tab5": "Transfers",
             }
             st.header("Info...")
             with st.expander(tab_headers["tab1"]):
@@ -339,11 +345,16 @@ def main():
                 )
             with st.expander(tab_headers["tab4"]):
                 st.write(
+                    "Compare team selections of two managers for a given gameweek. "
+                    "Captain (c), vice captain (v), and benched (b) players are considered as unique selections."
+                )
+            with st.expander(tab_headers["tab5"]):
+                st.write(
                     "Ever wondered which players your fellow mangers have transfered? and when? "
                     "Then this graph is for you! Zoom in to see multiple tranfers in a single transaction. "
                     "NOTE: Can only see transfers *after* the gameweek deadline. "
                 )
-        tab1, tab2, tab3, tab4 = st.tabs(
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
             [tab_headers[k] for k, v in tab_headers.items()]
         )
         with tab1:
@@ -439,6 +450,60 @@ def main():
                 )
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with tab4:
+            st.header(f"{league_name}")
+            with st.container(border=True):
+                if gw_type == "Single Gameweek":
+                    managers = league_teams_df["Manager"].unique()
+                    gw_range = st.slider(
+                        "Select Gameweek", 1, max_gw, 1, key="single_gw_venn"
+                    )
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        manager1 = st.selectbox("Select Manager 1", managers)
+                    with col2:
+                        manager2 = st.selectbox("Select Manager 2", managers)
+                    manager1_set = set(
+                        league_teams_df.loc[
+                            (league_teams_df["Manager"] == str(manager1))
+                            & (league_teams_df["gw"] == int(gw_range)),
+                            "player_pick",
+                        ]
+                    )
+                    manager2_set = set(
+                        league_teams_df.loc[
+                            (league_teams_df["Manager"] == str(manager2))
+                            & (league_teams_df["gw"] == int(gw_range)),
+                            "player_pick",
+                        ]
+                    )
+                    manager1_players = [
+                        s.replace(" (p)", "")
+                        for s in manager1_set.difference(manager2_set)
+                    ]
+                    intersection_players = [
+                        s.replace(" (p)", "")
+                        for s in manager1_set.intersection(manager2_set)
+                    ]
+                    manager2_players = [
+                        s.replace(" (p)", "")
+                        for s in manager2_set.difference(manager1_set)
+                    ]
+                    words = manager1_players + intersection_players + manager2_players
+                    colour1_idx = np.where(managers == manager1)[0][0] % 10
+                    colour2_idx = np.where(managers == manager2)[0][0] % 10
+                    venn = utils.word_list_venn_diagram(
+                        words=words,
+                        fontsizes=[10] * len(words),
+                        polarities=[-1] * len(manager1_players)
+                        + [0] * len(intersection_players)
+                        + [1] * len(manager2_players),
+                        colour1=px.colors.qualitative.Plotly[colour1_idx],
+                        colour2=px.colors.qualitative.Plotly[colour2_idx],
+                        scale=1.5,
+                    )
+                    venn_fig = venn.fig
+                    st.pyplot(venn_fig)
+        with tab5:
             st.header(f"{league_name}")
             with st.container(border=True):
                 bootstrap_static_response = utils.get_requests_response(
