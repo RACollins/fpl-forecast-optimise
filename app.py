@@ -346,7 +346,7 @@ def main():
             with st.expander(tab_headers["tab4"]):
                 st.write(
                     "Compare team selections of two managers for a given gameweek. "
-                    "Captain (c), vice captain (v), and benched (b) players are considered as unique selections."
+                    "Captained (c), vice-captained (v), and benched (b) players are considered distinct selections."
                 )
             with st.expander(tab_headers["tab5"]):
                 st.write(
