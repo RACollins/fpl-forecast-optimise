@@ -189,16 +189,20 @@ def get_picks_and_teams_dfs(league_df, players_df, max_gw):
             picks_df["manager_id"] = manager_id
             picks_df["gw"] = gw
             picks_df["status"] = np.where(
-                picks_df["is_captain"] == True,
+                (picks_df["is_captain"] == True) & (picks_df["multiplier"] == 2),
                 "c",
                 np.where(
-                    picks_df["is_vice_captain"] == True,
-                    "v",
+                    (picks_df["is_captain"] == True) & (picks_df["multiplier"] == 3),
+                    "tc",
                     np.where(
-                        (picks_df["multiplier"] == 0)
-                        | (picks_df["position"].isin([12, 13, 14, 15])),
-                        "b",
-                        "p",
+                        picks_df["is_vice_captain"] == True,
+                        "v",
+                        np.where(
+                            (picks_df["multiplier"] == 0)
+                            | (picks_df["position"].isin([12, 13, 14, 15])),
+                            "b",
+                            "p",
+                        ),
                     ),
                 ),
             )
@@ -427,7 +431,7 @@ def main():
 
                 if gw_type == "Single Gameweek":
                     gw_range = st.slider(
-                        "Select Gameweek Range", 1, max_gw, 1, key="single_gw"
+                        "Select Gameweek Range", 1, max_gw, max_gw, key="single_gw"
                     )
                     gw_select_indx = list(range((gw_range - 1) * 15, gw_range * 15))
                 elif gw_type == "Multiple Gameweeks":
@@ -455,7 +459,7 @@ def main():
                 if gw_type == "Single Gameweek":
                     managers = league_teams_df["Manager"].unique()
                     gw_range = st.slider(
-                        "Select Gameweek", 1, max_gw, 1, key="single_gw_venn"
+                        "Select Gameweek", 1, max_gw, max_gw, key="single_gw_venn"
                     )
                     col1, col2 = st.columns(2)
                     with col1:
