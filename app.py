@@ -549,7 +549,7 @@ def main():
                     st.write(bootstrap_static_df.loc[gw - 1, "deadline_time"])
                     st.write(datetime.datetime.strptime(
                             bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-                        ))
+                        ).timestamp()*1000)
                     st.write("")
                     st.write("")
                     st.write("")
