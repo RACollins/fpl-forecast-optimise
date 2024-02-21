@@ -7,6 +7,8 @@ import plotly.express as px
 import os
 import utils
 
+# os.environ["TZ"] = "UTC"
+
 root_dir_path = os.path.dirname(os.path.realpath(__file__))
 
 ###################
@@ -551,8 +553,7 @@ def main():
                     fig.add_vline(
                         x=datetime.datetime.strptime(
                             bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-                        ).replace(tzinfo=ZoneInfo("Asia/Tokyo"))
-                        .timestamp()
+                        ).timestamp()
                         * 1000,
                         line_width=1,
                         line_dash="dash",
