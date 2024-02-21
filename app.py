@@ -1,6 +1,6 @@
 import streamlit as st
 import datetime as datetime
-import pytz
+from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -551,7 +551,7 @@ def main():
                     fig.add_vline(
                         x=datetime.datetime.strptime(
                             bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-                        )
+                        ).replace(tzinfo=ZoneInfo("Asia/Tokyo"))
                         .timestamp()
                         * 1000,
                         line_width=1,
