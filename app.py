@@ -546,25 +546,12 @@ def main():
                         showlegend=True, yaxis_type="category", hovermode="x unified"
                     )
                 )
+                st.write(datetime.datetime.now().astimezone().tzname())
                 for gw in range(1, 39):
-                    st.write(bootstrap_static_df.loc[gw - 1, "deadline_time"])
-                    st.write(
-                        datetime.datetime.strptime(
-                            bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-                        )
-                        .replace(tzinfo=pytz.timezone("Asia/Tokyo"))
-                        .timestamp()
-                        * 1000
-                    )
-                    st.write("")
-                    st.write("")
-                    st.write("")
-                    st.write("")
                     fig.add_vline(
                         x=datetime.datetime.strptime(
                             bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
                         )
-                        .replace(tzinfo=pytz.timezone("Asia/Tokyo"))
                         .timestamp()
                         * 1000,
                         line_width=1,
