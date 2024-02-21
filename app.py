@@ -1,5 +1,6 @@
 import streamlit as st
 import datetime as datetime
+import pytz
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -547,9 +548,14 @@ def main():
                 )
                 for gw in range(1, 39):
                     st.write(bootstrap_static_df.loc[gw - 1, "deadline_time"])
-                    st.write(datetime.datetime.strptime(
+                    st.write(
+                        datetime.datetime.strptime(
                             bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-                        ).timestamp()*1000)
+                        )
+                        .replace(tzinfo=pytz.timezone("Asia/Tokyo"))
+                        .timestamp()
+                        * 1000
+                    )
                     st.write("")
                     st.write("")
                     st.write("")
@@ -557,7 +563,9 @@ def main():
                     fig.add_vline(
                         x=datetime.datetime.strptime(
                             bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-                        ).timestamp()
+                        )
+                        .replace(tzinfo=pytz.timezone("Asia/Tokyo"))
+                        .timestamp()
                         * 1000,
                         line_width=1,
                         line_dash="dash",
