@@ -547,6 +547,13 @@ def main():
                 )
                 for gw in range(1, 39):
                     st.write(bootstrap_static_df.loc[gw - 1, "deadline_time"])
+                    st.write(datetime.datetime.strptime(
+                            bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
+                        ))
+                    st.write("")
+                    st.write("")
+                    st.write("")
+                    st.write("")
                     fig.add_vline(
                         x=datetime.datetime.strptime(
                             bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
