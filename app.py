@@ -517,6 +517,8 @@ def main():
                     bootstrap_static_url, kwars={}
                 )
                 bootstrap_static_df = pd.DataFrame(bootstrap_static_response["events"])
+                st.dataframe(bootstrap_static_df)
+                st.dataframe(pd.DataFrame(bootstrap_static_response["elements"]).loc[:, ["id", "web_name"]])
                 fig = (
                     px.scatter(
                         all_managers_transfers_df,
