@@ -1,5 +1,7 @@
 import streamlit as st
 import datetime as datetime
+from dataclasses import dataclass
+import requests
 from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
@@ -81,6 +83,37 @@ def inject_custom_css():
             unsafe_allow_html=True,
         )
     return None
+
+
+###############
+### Classes ###
+###############
+
+
+'''@dataclass
+class LeagueData:
+    leagueID: int
+    standings_url_template: str
+    history_url_template: str
+    picks_url_template: str
+    transfers_url_template: str
+    bootstrap_static_url: str
+
+    @st.cache_data
+    def get_league_data(self):
+        fpl_league_response_json = self._get_requests_response(
+            self.standings_url_template, leagueID=self.leagueID
+        )
+        league_name = fpl_league_response_json["league"]["name"]
+        league_df = pd.DataFrame(
+            fpl_league_response_json["standings"]["results"]
+        ).rename(columns=col_name_change_dict)
+        return league_name, league_df
+
+    def _get_requests_response(self, url_template, **kwargs) -> dict:
+        response = requests.get(url_template.format(**kwargs))
+        response_json = response.json()
+        return response_json'''
 
 
 @st.cache_data
@@ -312,6 +345,18 @@ def main():
     ##############
 
     if render_elements:
+
+        '''ldo = LeagueData(  # league data object
+            leagueID=leagueID,  # type: ignore
+            standings_url_template="https://fantasy.premierleague.com/api/leagues-classic/{leagueID}/standings/",
+            history_url_template="https://fantasy.premierleague.com/api/entry/{manager_id}/history/",
+            picks_url_template="https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/",
+            transfers_url_template="https://fantasy.premierleague.com/api/entry/{manager_id}/transfers/",
+            bootstrap_static_url="https://fantasy.premierleague.com/api/bootstrap-static/",
+        )
+
+        league_name, league_df = ldo.get_league_data()'''
+
         league_name, league_df = get_league_data(leagueID)
         with st.spinner(text="(1/2) Collecting and processing season statistics..."):
             all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
@@ -323,7 +368,6 @@ def main():
             league_teams_df, league_picks_df = get_picks_and_teams_dfs(
                 league_df, players_df, max_gw
             )
-        # st.dataframe(league_teams_df)
         all_managers_transfers_df = get_managers_transfers_df(league_df, players_df)
         bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
         with st.sidebar:
@@ -364,6 +408,20 @@ def main():
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
             [tab_headers[k] for k, v in tab_headers.items()]
         )
+
+        '''st.write("league_df")
+        st.dataframe(league_df)
+        st.write("all_mngrs_all_gws_df")
+        st.dataframe(all_mngrs_all_gws_df)
+        st.write("players_df")
+        st.dataframe(players_df)
+        st.write("league_teams_df")
+        st.dataframe(league_teams_df)
+        st.write("league_picks_df")
+        st.dataframe(league_picks_df)
+        st.write("all_managers_transfers_df")
+        st.dataframe(all_managers_transfers_df)'''
+
         with tab1:
             st.header(f"{league_name}")
             league_df = league_df.merge(
@@ -517,6 +575,12 @@ def main():
                     bootstrap_static_url, kwars={}
                 )
                 bootstrap_static_df = pd.DataFrame(bootstrap_static_response["events"])
+                st.dataframe(bootstrap_static_df)
+                st.dataframe(
+                    pd.DataFrame(bootstrap_static_response["elements"]).loc[
+                        :, ["id", "web_name"]
+                    ]
+                )
                 fig = (
                     px.scatter(
                         all_managers_transfers_df,
