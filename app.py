@@ -9,8 +9,6 @@ import plotly.express as px
 import os
 import utils
 
-# os.environ["TZ"] = "UTC"
-
 root_dir_path = os.path.dirname(os.path.realpath(__file__))
 
 ###################
@@ -37,6 +35,19 @@ background_img = utils.get_img_as_base64(
 #################
 ### Constants ###
 #################
+standings_url_template = (
+    "https://fantasy.premierleague.com/api/leagues-classic/{leagueID}/standings/"
+)
+history_url_template = (
+    "https://fantasy.premierleague.com/api/entry/{manager_id}/history/"
+)
+picks_url_template = (
+    "https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/"
+)
+transfers_url_template = (
+    "https://fantasy.premierleague.com/api/entry/{manager_id}/transfers/"
+)
+bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
 
 col_name_change_dict = {
     "event": "GW",
@@ -90,7 +101,7 @@ def inject_custom_css():
 ###############
 
 
-'''@dataclass
+@dataclass
 class LeagueData:
     leagueID: int
     standings_url_template: str
@@ -99,8 +110,11 @@ class LeagueData:
     transfers_url_template: str
     bootstrap_static_url: str
 
+    def __post_init__(self):
+        self.league_name, self.league_df = self._get_league_name_and_standings()
+
     @st.cache_data
-    def get_league_data(self):
+    def _get_league_name_and_standings(self) -> tuple:
         fpl_league_response_json = self._get_requests_response(
             self.standings_url_template, leagueID=self.leagueID
         )
@@ -113,7 +127,7 @@ class LeagueData:
     def _get_requests_response(self, url_template, **kwargs) -> dict:
         response = requests.get(url_template.format(**kwargs))
         response_json = response.json()
-        return response_json'''
+        return response_json
 
 
 @st.cache_data
@@ -346,18 +360,17 @@ def main():
 
     if render_elements:
 
-        '''ldo = LeagueData(  # league data object
+        ldo = LeagueData(  # league data object
             leagueID=leagueID,  # type: ignore
-            standings_url_template="https://fantasy.premierleague.com/api/leagues-classic/{leagueID}/standings/",
-            history_url_template="https://fantasy.premierleague.com/api/entry/{manager_id}/history/",
-            picks_url_template="https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/",
-            transfers_url_template="https://fantasy.premierleague.com/api/entry/{manager_id}/transfers/",
-            bootstrap_static_url="https://fantasy.premierleague.com/api/bootstrap-static/",
+            standings_url_template=standings_url_template,
+            history_url_template=history_url_template,
+            picks_url_template=picks_url_template,
+            transfers_url_template=transfers_url_template,
+            bootstrap_static_url=bootstrap_static_url,
         )
 
-        league_name, league_df = ldo.get_league_data()'''
+        _, league_df = get_league_data(leagueID)
 
-        league_name, league_df = get_league_data(leagueID)
         with st.spinner(text="(1/2) Collecting and processing season statistics..."):
             all_mngrs_all_gws_df = get_all_mngrs_all_gws_df(league_df)
         players_df = get_players_df()
@@ -369,7 +382,6 @@ def main():
                 league_df, players_df, max_gw
             )
         all_managers_transfers_df = get_managers_transfers_df(league_df, players_df)
-        bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
         with st.sidebar:
             tab_headers = {
                 "tab1": "Summary",
@@ -409,7 +421,7 @@ def main():
             [tab_headers[k] for k, v in tab_headers.items()]
         )
 
-        '''st.write("league_df")
+        """st.write("league_df")
         st.dataframe(league_df)
         st.write("all_mngrs_all_gws_df")
         st.dataframe(all_mngrs_all_gws_df)
@@ -420,10 +432,10 @@ def main():
         st.write("league_picks_df")
         st.dataframe(league_picks_df)
         st.write("all_managers_transfers_df")
-        st.dataframe(all_managers_transfers_df)'''
+        st.dataframe(all_managers_transfers_df)"""
 
         with tab1:
-            st.header(f"{league_name}")
+            st.header(f"{ldo.league_name}")
             league_df = league_df.merge(
                 all_mngrs_all_gws_df.loc[
                     all_mngrs_all_gws_df["GW"] == max_gw, ["Manager", "Form"]
@@ -439,7 +451,7 @@ def main():
                 hide_index=True,
             )
         with tab2:
-            st.header(f"{league_name}")
+            st.header(f"{ldo.league_name}")
             with st.container(border=True):
                 y_axis_option = st.selectbox(
                     "Pick a Parameter to Plot",
@@ -477,7 +489,7 @@ def main():
                     fig.update_yaxes(autorange="reversed")
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with tab3:
-            st.header(f"{league_name}")
+            st.header(f"{ldo.league_name}")
 
             with st.container(border=True):
                 gw_type = st.radio(
@@ -515,7 +527,7 @@ def main():
                 )
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with tab4:
-            st.header(f"{league_name}")
+            st.header(f"{ldo.league_name}")
             with st.container(border=True):
                 if gw_type == "Single Gameweek":
                     managers = league_teams_df["Manager"].unique()
@@ -569,7 +581,7 @@ def main():
                     venn_fig = venn.fig
                     st.pyplot(venn_fig)
         with tab5:
-            st.header(f"{league_name}")
+            st.header(f"{ldo.league_name}")
             with st.container(border=True):
                 bootstrap_static_response = utils.get_requests_response(
                     bootstrap_static_url, kwars={}
