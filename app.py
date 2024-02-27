@@ -1,19 +1,18 @@
 import streamlit as st
 import datetime as datetime
-from dataclasses import dataclass
-import requests
-from zoneinfo import ZoneInfo
 import numpy as np
-import pandas as pd
 import plotly.express as px
 import os
 import utils
+from league_data import LeagueData
 
 root_dir_path = os.path.dirname(os.path.realpath(__file__))
+
 
 ###################
 ### Page Config ###
 ###################
+
 
 st.set_page_config(
     page_title="FPL stats App",
@@ -21,7 +20,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="auto",
 )
-
 
 sidebar_img = utils.get_img_as_base64(
     root_dir_path + "/data/app/wp11906650-fantasy-premier-league-wallpapers.jpg"
@@ -35,6 +33,8 @@ background_img = utils.get_img_as_base64(
 #################
 ### Constants ###
 #################
+
+
 standings_url_template = (
     "https://fantasy.premierleague.com/api/leagues-classic/{leagueID}/standings/"
 )
@@ -49,29 +49,6 @@ transfers_url_template = (
 )
 bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
 
-col_name_change_dict = {
-    "event": "GW",
-    "event_total": "GW Total",
-    "player_name": "Manager",
-    "entry": "ID",
-    "entry_name": "Team Name",
-    "rank": "Rank",
-    "last_rank": "Last Rank",
-    "rank_sort": "Rank Sort",
-    "overall_rank": "Overall Rank",
-    "total": "Total Points",
-    "total_points": "Total Points",
-    "points": "Points",
-    "value": "Value",
-    "bank": "Bank",
-    "event_transfers": "Transfers",
-    "event_transfers_cost": "Transfer Costs",
-    "points_on_bench": "Points on Bench",
-    "element_in": "Player_in",
-    "element_out": "Player_out",
-    "element_in_cost": "Player_in_cost",
-    "element_out_cost": "Player_out_cost",
-}
 heatmap_colourscale = [
     [0, "rgba(61,23,90,255)"],
     [0.35, "rgba(70,160,246,255)"],
@@ -96,226 +73,52 @@ def inject_custom_css():
     return None
 
 
-###############
-### Classes ###
-###############
-
-
-@dataclass
-class LeagueData:
-    leagueID: int
-    standings_url_template: str
-    history_url_template: str
-    picks_url_template: str
-    transfers_url_template: str
-    bootstrap_static_url: str
-
-    def __post_init__(self):
-        ### League info
-        self.league_name, self.standings_df = self._get_league_name_and_standings()
-        self.manager_ids = self.standings_df["ID"].values
-        self.manager_id_name_dict = pd.Series(
-            self.standings_df["ID"].values, index=self.standings_df["ID"]
-        ).to_dict()
-
-        ### Season stats
-        with st.spinner(text="(1/2) Collecting and processing season statistics..."):
-            self.season_stats_df = self._get_season_stats_df()
-        self.max_gw = self.season_stats_df["GW"].max()
-
-        ### Player ID:web_name lookup
-        self.player_id_name_dict = self._get_player_id_name_lookup()
-
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def _get_season_stats_df(self) -> pd.DataFrame:
-        season_stats_list = []
-        managers_completed = st.empty()
-        percent_completed = st.empty()
-        prog_bar = st.progress(0)
-        for i, manager_id in enumerate(self.manager_ids):
-            history_response_json = self._get_requests_response(
-                history_url_template, manager_id=manager_id
-            )
-            season_stats_per_manager_df = pd.DataFrame(history_response_json["current"])
-            season_stats_per_manager_df["ID"] = manager_id
-            season_stats_per_manager_df["Team Name"] = self.standings_df.loc[
-                i, "Team Name"
-            ]
-            season_stats_per_manager_df["Manager"] = self.standings_df.loc[i, "Manager"]
-            season_stats_list.append(season_stats_per_manager_df)
-            managers_completed.text(
-                "({0}/{1}) Managers completed".format(i, len(self.manager_ids))
-            )
-            percent_completed.text(
-                "{0:.3f} %".format(100 * ((i + 1) / len(self.manager_ids)))
-            )
-            prog_bar.progress((i + 1) / len(self.manager_ids))
-        managers_completed.empty()
-        percent_completed.empty()
-        prog_bar.empty()
-        season_stats_df = (
-            pd.concat(season_stats_list)
-            .rename(columns=col_name_change_dict)
-            .drop(["Rank", "Rank Sort"], axis=1)
-        )
-        ### Divide by 10
-        season_stats_df["Bank"] = season_stats_df["Bank"] * 1e5
-        season_stats_df["Value"] = season_stats_df["Value"] * 1e5
-        ### Add league rank as "Rank"
-        season_stats_df["Rank"] = np.nan
-        season_stats_df["Rank"] = season_stats_df.groupby("GW")["Total Points"].rank(
-            method="min", ascending=False
-        )
-        ### Add "Total" columns
-        for col in ["Transfers", "Transfer Costs", "Points on Bench"]:
-            season_stats_df[f"Total {col}"] = season_stats_df.groupby("Manager")[
-                col
-            ].cumsum()
-        ### Add "Form" column
-        season_stats_df["Form"] = season_stats_df.groupby("Manager")[
-            "Points"
-        ].transform(lambda s: s.rolling(4, min_periods=1).mean().div(12))
-        return season_stats_df
-
-    @st.cache_data
-    def _get_league_name_and_standings(self) -> tuple:
-        fpl_league_response_json = self._get_requests_response(
-            self.standings_url_template, leagueID=self.leagueID
-        )
-        league_name = fpl_league_response_json["league"]["name"]
-        standings_df = pd.DataFrame(
-            fpl_league_response_json["standings"]["results"]
-        ).rename(columns=col_name_change_dict)
-        return league_name, standings_df
-
-    @st.cache_data
-    def _get_player_id_name_lookup(self) -> dict:
-        bootstrap_static_response = self._get_requests_response(
-            bootstrap_static_url, kwars={}
-        )
-        elements_df = pd.DataFrame(bootstrap_static_response["elements"])
-        player_id_name_dict = pd.Series(
-            elements_df["web_name"].values, index=elements_df["id"]
-        ).to_dict()
-        return player_id_name_dict
-
-    def _get_requests_response(self, url_template, **kwargs) -> dict:
-        response = requests.get(url_template.format(**kwargs))
-        response_json = response.json()
-        return response_json
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_picks_and_teams_dfs(standings_df, player_id_name_dict, max_gw):
-    team_picks_template = (
-        "https://fantasy.premierleague.com/api/entry/{manager_id}/event/{gw}/picks/"
-    )
-    manager_id_name_dict = pd.Series(
-        standings_df["Manager"].values, index=standings_df["ID"]
-    ).to_dict()
-    league_teams_df_list = []
-    league_picks_dict = {}
-    manager_ids = standings_df["ID"].values
-    managers_completed = st.empty()
-    gws_completed = st.empty()
-    percent_completed = st.empty()
-    prog_bar = st.progress(0)
-    for i, manager_id in enumerate(manager_ids):
-        league_picks_dict[manager_id] = []
-        managers_completed.text(
-            "({0}/{1}) Managers completed".format(i, len(manager_ids))
+def make_transfers_fig(ldo):
+    fig = (
+        px.scatter(
+            ldo.transfers_df,
+            x="time",
+            y="Manager",
+            color="Manager",
+            color_discrete_sequence=px.colors.qualitative.Plotly,
+            hover_name=None,
+            hover_data={
+                "Manager": True,
+                "time": False,
+                "Player_in": True,
+                "Player_in_cost": True,
+                "Player_out": True,
+                "Player_out_cost": True,
+                "GW": False,
+            },
         )
-        for j, gw in enumerate(range(1, max_gw + 1)):
-            team_selection_response_json = utils.get_requests_response(
-                team_picks_template, manager_id=manager_id, gw=gw
-            )
-            picks_df = pd.DataFrame(team_selection_response_json["picks"])
-            picks_df["element"] = picks_df["element"].map(player_id_name_dict)
-            picks_df["manager_id"] = manager_id
-            picks_df["gw"] = gw
-            picks_df["status"] = np.where(
-                (picks_df["is_captain"] == True) & (picks_df["multiplier"] == 2),
-                "c",
-                np.where(
-                    (picks_df["is_captain"] == True) & (picks_df["multiplier"] == 3),
-                    "tc",
-                    np.where(
-                        picks_df["is_vice_captain"] == True,
-                        "v",
-                        np.where(
-                            (picks_df["multiplier"] == 0)
-                            | (picks_df["position"].isin([12, 13, 14, 15])),
-                            "b",
-                            "p",
-                        ),
-                    ),
-                ),
-            )
-            picks_df["player_pick"] = list(
-                (
-                    picks_df["element"] + " (" + picks_df["status"].astype(str) + ")"
-                ).values
-            )
-            league_teams_df_list.append(picks_df)
-            league_picks_dict[manager_id] += list(
-                (picks_df["player_pick"] + picks_df["gw"].astype(str)).values
-            )
-            gws_completed.text("({0}/{1}) Gameweeks completed".format(j, max_gw))
-            percent_completed.text(
-                "{0:.3f} %".format(
-                    100 * (((i * max_gw) + (j + 1)) / (len(manager_ids) * max_gw))
-                )
-            )
-            prog_bar.progress(((i * max_gw) + (j + 1)) / (len(manager_ids) * max_gw))
-
-    managers_completed.empty()
-    gws_completed.empty()
-    percent_completed.empty()
-    prog_bar.empty()
-
-    league_teams_df = pd.concat(league_teams_df_list).reset_index(drop=True)
-    league_teams_df = league_teams_df.replace(
-        {"manager_id": manager_id_name_dict}
-    ).rename(columns={"manager_id": "Manager"})
-    league_picks_df = pd.DataFrame(league_picks_dict).rename(
-        columns=manager_id_name_dict
-    )
-    return league_teams_df, league_picks_df
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_managers_transfers_df(standings_df, player_id_name_dict):
-    transfers_url_template = (
-        "https://fantasy.premierleague.com/api/entry/{manager_id}/transfers/"
-    )
-    manager_id_name_dict = pd.Series(
-        standings_df["Manager"].values, index=standings_df["ID"]
-    ).to_dict()
-    transfers_dfs_list = []
-    for manager_id in standings_df["ID"].values:
-        transfers_response_json = utils.get_requests_response(
-            transfers_url_template, manager_id=manager_id
+        .update_xaxes(
+            rangeslider_visible=True,
+            range=[
+                str(
+                    ldo.bootstrap_static_events_df.loc[ldo.max_gw - 2, "deadline_time"]
+                )[:10],
+                str(ldo.bootstrap_static_events_df.loc[ldo.max_gw, "deadline_time"])[
+                    :10
+                ],
+            ],
         )
-        if not transfers_response_json:
-            continue
-        transfers_df = pd.DataFrame(transfers_response_json)
-        transfers_df["element_in"] = transfers_df["element_in"].map(player_id_name_dict)
-        transfers_df["element_in_cost"] = (transfers_df["element_in_cost"] * 1e5).apply(
-            lambda n: utils.human_readable(n)
-        )
-        transfers_df["element_out"] = transfers_df["element_out"].map(
-            player_id_name_dict
-        )
-        transfers_df["element_out_cost"] = (
-            transfers_df["element_out_cost"] * 1e5
-        ).apply(lambda n: utils.human_readable(n))
-        transfers_df["manager_id"] = manager_id
-        transfers_df["Manager"] = manager_id_name_dict[manager_id]
-        transfers_dfs_list.append(transfers_df)
-    all_managers_transfers_df = pd.concat(transfers_dfs_list).rename(
-        columns=col_name_change_dict
+        .update_layout(showlegend=True, yaxis_type="category", hovermode="x unified")
     )
-    return all_managers_transfers_df
+    for gw in range(1, 39):
+        fig.add_vline(
+            x=datetime.datetime.strptime(
+                ldo.bootstrap_static_events_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
+            ).timestamp()
+            * 1000,
+            line_width=1,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Gameweek {gw} Deadline",
+            annotation_position="top",
+        )
+    return fig
 
 
 ##################
@@ -339,7 +142,6 @@ def main():
     if leagueID != None:
         render_elements = True
     else:
-        standings_df = None
         st.info(
             "How to find you league ID:  \n"
             "👉 Login to your FPL account  \n"
@@ -363,15 +165,22 @@ def main():
             bootstrap_static_url=bootstrap_static_url,
         )
 
-        with st.spinner(
-            text="(2/2) Collecting and processing team selection data, might take a while..."
-        ):
-            league_teams_df, league_picks_df = get_picks_and_teams_dfs(
-                ldo.standings_df, ldo.player_id_name_dict, ldo.max_gw
+        what_if_col, gw_select_col, buffer_cols = st.columns([5, 2, 13])
+        with what_if_col:
+            what_if_on = st.toggle(
+                "'What if' mode",
+                value=False,
+                help="What if you hadn't made those transfers? "
+                "To find out, switch on and select the gameweek from which you theoretically stopped making transfers.",
             )
-        all_managers_transfers_df = get_managers_transfers_df(
-            ldo.standings_df, ldo.player_id_name_dict
-        )
+        if what_if_on:
+            with gw_select_col:
+                what_if_gw = st.number_input(
+                    "Gameweek",
+                    value=ldo.max_gw - 1,
+                    step=1,
+                )
+
         with st.sidebar:
             tab_headers = {
                 "tab1": "Summary",
@@ -410,17 +219,6 @@ def main():
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
             [tab_headers[k] for k, v in tab_headers.items()]
         )
-
-        """st.write("ldo.standings_df")
-        st.dataframe(ldo.standings_df)
-        st.write("ldo.season_stats_df")
-        st.dataframe(ldo.season_stats_df)
-        st.write("league_teams_df")
-        st.dataframe(league_teams_df)
-        st.write("league_picks_df")
-        st.dataframe(league_picks_df)
-        st.write("all_managers_transfers_df")
-        st.dataframe(all_managers_transfers_df)"""
 
         with tab1:
             st.header(f"{ldo.league_name}")
@@ -515,7 +313,7 @@ def main():
                 else:
                     gw_select_indx = []
 
-                sim_df = utils.jaccard_sim(league_picks_df.iloc[gw_select_indx])
+                sim_df = utils.jaccard_sim(ldo.league_picks_df.iloc[gw_select_indx])
                 fig = px.imshow(
                     sim_df,
                     text_auto=False,
@@ -530,7 +328,7 @@ def main():
             st.header(f"{ldo.league_name}")
             with st.container(border=True):
                 if gw_type == "Single Gameweek":
-                    managers = league_teams_df["Manager"].unique()
+                    managers = ldo.standings_df["Manager"].values
                     gw_range = st.slider(
                         "Select Gameweek",
                         1,
@@ -544,16 +342,16 @@ def main():
                     with col2:
                         manager2 = st.selectbox("Select Manager 2", managers)
                     manager1_set = set(
-                        league_teams_df.loc[
-                            (league_teams_df["Manager"] == str(manager1))
-                            & (league_teams_df["gw"] == int(gw_range)),
+                        ldo.league_teams_df.loc[
+                            (ldo.league_teams_df["Manager"] == str(manager1))
+                            & (ldo.league_teams_df["gw"] == int(gw_range)),
                             "player_pick",
                         ]
                     )
                     manager2_set = set(
-                        league_teams_df.loc[
-                            (league_teams_df["Manager"] == str(manager2))
-                            & (league_teams_df["gw"] == int(gw_range)),
+                        ldo.league_teams_df.loc[
+                            (ldo.league_teams_df["Manager"] == str(manager2))
+                            & (ldo.league_teams_df["gw"] == int(gw_range)),
                             "player_pick",
                         ]
                     )
@@ -587,62 +385,7 @@ def main():
         with tab5:
             st.header(f"{ldo.league_name}")
             with st.container(border=True):
-                bootstrap_static_response = utils.get_requests_response(
-                    bootstrap_static_url, kwars={}
-                )
-                bootstrap_static_df = pd.DataFrame(bootstrap_static_response["events"])
-                st.dataframe(bootstrap_static_df)
-                st.dataframe(
-                    pd.DataFrame(bootstrap_static_response["elements"]).loc[
-                        :, ["id", "web_name"]
-                    ]
-                )
-                fig = (
-                    px.scatter(
-                        all_managers_transfers_df,
-                        x="time",
-                        y="Manager",
-                        color="Manager",
-                        color_discrete_sequence=px.colors.qualitative.Plotly,
-                        hover_name=None,
-                        hover_data={
-                            "Manager": True,
-                            "time": False,
-                            "Player_in": True,
-                            "Player_in_cost": True,
-                            "Player_out": True,
-                            "Player_out_cost": True,
-                            "GW": False,
-                        },
-                    )
-                    .update_xaxes(
-                        rangeslider_visible=True,
-                        range=[
-                            str(
-                                bootstrap_static_df.loc[ldo.max_gw - 2, "deadline_time"]
-                            )[:10],
-                            str(bootstrap_static_df.loc[ldo.max_gw, "deadline_time"])[
-                                :10
-                            ],
-                        ],
-                    )
-                    .update_layout(
-                        showlegend=True, yaxis_type="category", hovermode="x unified"
-                    )
-                )
-                st.write(datetime.datetime.now().astimezone().tzname())
-                for gw in range(1, 39):
-                    fig.add_vline(
-                        x=datetime.datetime.strptime(
-                            bootstrap_static_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-                        ).timestamp()
-                        * 1000,
-                        line_width=1,
-                        line_dash="dash",
-                        line_color="red",
-                        annotation_text=f"Gameweek {gw} Deadline",
-                        annotation_position="top",
-                    )
+                fig = make_transfers_fig(ldo=ldo)
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
 
