@@ -175,6 +175,9 @@ def main():
         )
 
         st.dataframe(ldo.players_df)
+        st.dataframe(ldo.league_teams_df)
+        st.dataframe(ldo.league_picks_df)
+        
         with tab1:
             st.header(f"{ldo.league_name}")
             ldo.standings_df = ldo.standings_df.merge(

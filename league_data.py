@@ -177,7 +177,7 @@ class LeagueData:
             all_players_all_gw_list.append(all_players_df)
         players_df = (
             pd.concat(all_players_all_gw_list)
-            # .loc[:, ["player_id", "web_name", "gw", "total_points"]]
+            .loc[:, ["player_id", "web_name", "gw", "total_points"]]
             .reset_index(drop=True)
         )
         return players_df
@@ -264,9 +264,12 @@ class LeagueData:
                         + ")"
                     ).values
                 )
+                picks_df["player_pick_full"] = list(
+                    (picks_df["player_pick"] + picks_df["gw"].astype(str)).values
+                )
                 league_teams_df_list.append(picks_df)
                 league_picks_dict[manager_name] += list(
-                    (picks_df["player_pick"] + picks_df["gw"].astype(str)).values
+                    (picks_df["player_pick_full"]).values
                 )
                 gws_completed.text(
                     "({0}/{1}) Gameweeks completed".format(j, self.max_gw)
