@@ -48,12 +48,7 @@ transfers_url_template = (
     "https://fantasy.premierleague.com/api/entry/{manager_id}/transfers/"
 )
 bootstrap_static_url = "https://fantasy.premierleague.com/api/bootstrap-static/"
-
-heatmap_colourscale = [
-    [0, "rgba(61,23,90,255)"],
-    [0.35, "rgba(70,160,246,255)"],
-    [1, "rgba(72,250,137,255)"],
-]
+live_url_template = "https://fantasy.premierleague.com/api/event/{gw}/live/"
 
 
 #################
@@ -71,54 +66,6 @@ def inject_custom_css():
             unsafe_allow_html=True,
         )
     return None
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def make_transfers_fig(ldo):
-    fig = (
-        px.scatter(
-            ldo.transfers_df,
-            x="time",
-            y="Manager",
-            color="Manager",
-            color_discrete_sequence=px.colors.qualitative.Plotly,
-            hover_name=None,
-            hover_data={
-                "Manager": True,
-                "time": False,
-                "Player_in": True,
-                "Player_in_cost": True,
-                "Player_out": True,
-                "Player_out_cost": True,
-                "GW": False,
-            },
-        )
-        .update_xaxes(
-            rangeslider_visible=True,
-            range=[
-                str(
-                    ldo.bootstrap_static_events_df.loc[ldo.max_gw - 2, "deadline_time"]
-                )[:10],
-                str(ldo.bootstrap_static_events_df.loc[ldo.max_gw, "deadline_time"])[
-                    :10
-                ],
-            ],
-        )
-        .update_layout(showlegend=True, yaxis_type="category", hovermode="x unified")
-    )
-    for gw in range(1, 39):
-        fig.add_vline(
-            x=datetime.datetime.strptime(
-                ldo.bootstrap_static_events_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
-            ).timestamp()
-            * 1000,
-            line_width=1,
-            line_dash="dash",
-            line_color="red",
-            annotation_text=f"Gameweek {gw} Deadline",
-            annotation_position="top",
-        )
-    return fig
 
 
 ##################
@@ -163,9 +110,11 @@ def main():
             picks_url_template=picks_url_template,
             transfers_url_template=transfers_url_template,
             bootstrap_static_url=bootstrap_static_url,
+            live_url_template=live_url_template,
         )
 
-        what_if_col, gw_select_col, buffer_cols = st.columns([5, 2, 13])
+        ### "What if" logic
+        what_if_col, gw_select_col, buffer_cols = st.columns([5, 3, 12])
         with what_if_col:
             what_if_on = st.toggle(
                 "'What if' mode",
@@ -179,8 +128,11 @@ def main():
                     "Gameweek",
                     value=ldo.max_gw - 1,
                     step=1,
+                    min_value=1,
+                    max_value=ldo.max_gw,
                 )
 
+        ### Side bar
         with st.sidebar:
             tab_headers = {
                 "tab1": "Summary",
@@ -216,10 +168,13 @@ def main():
                     "Then this graph is for you! Zoom in to see multiple tranfers in a single transaction. "
                     "NOTE: Can only see transfers *after* the gameweek deadline. "
                 )
+
+        ### Tabs
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
             [tab_headers[k] for k, v in tab_headers.items()]
         )
 
+        st.dataframe(ldo.players_df)
         with tab1:
             st.header(f"{ldo.league_name}")
             ldo.standings_df = ldo.standings_df.merge(
@@ -263,15 +218,8 @@ def main():
                 gw_range = st.slider(
                     "Select Gameweek Range", 1, ldo.max_gw, (1, ldo.max_gw)
                 )
-                fig = px.line(
-                    ldo.season_stats_df[
-                        ldo.season_stats_df["GW"].between(gw_range[0], gw_range[1])
-                    ],
-                    x="GW",
-                    y=y_axis_option,
-                    color="Manager",
-                    color_discrete_sequence=px.colors.qualitative.Plotly,
-                    markers=True,
+                fig = ldo.make_season_stats_chart(
+                    gw_range=gw_range, y_axis_option=y_axis_option
                 )
                 if y_axis_option in ["Rank", "Overall Rank"]:
                     fig.update_yaxes(autorange="reversed")
@@ -314,15 +262,7 @@ def main():
                     gw_select_indx = []
 
                 sim_df = utils.jaccard_sim(ldo.league_picks_df.iloc[gw_select_indx])
-                fig = px.imshow(
-                    sim_df,
-                    text_auto=False,
-                    aspect="auto",
-                    color_continuous_scale=heatmap_colourscale,
-                    zmax=1.0,
-                    zmin=0.0,
-                    labels=dict(x="Manager 1", y="Manager 2", color="Similarity"),
-                )
+                fig = ldo.make_similarity_heatmap(sim_df=sim_df)
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with tab4:
             st.header(f"{ldo.league_name}")
@@ -385,7 +325,7 @@ def main():
         with tab5:
             st.header(f"{ldo.league_name}")
             with st.container(border=True):
-                fig = make_transfers_fig(ldo=ldo)
+                fig = ldo.make_transfers_fig()
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
 
 

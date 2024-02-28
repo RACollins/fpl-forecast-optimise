@@ -1,9 +1,11 @@
+from altair import Self
 import streamlit as st
 import datetime as datetime
 from dataclasses import dataclass
 import requests
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import utils
 
 col_name_change_dict = {
@@ -30,6 +32,7 @@ col_name_change_dict = {
     "element_out_cost": "Player_out_cost",
 }
 
+
 @dataclass
 class LeagueData:
     leagueID: int
@@ -38,6 +41,7 @@ class LeagueData:
     picks_url_template: str
     transfers_url_template: str
     bootstrap_static_url: str
+    live_url_template: str
 
     def __post_init__(self):
         ### League info
@@ -67,6 +71,116 @@ class LeagueData:
 
         ### Transfers
         self.transfers_df = self._get_transfers_df()
+
+        ### Players
+        self.players_df = self._get_players_df()
+
+    def make_season_stats_chart(self, gw_range, y_axis_option):
+        fig = px.line(
+            self.season_stats_df[
+                self.season_stats_df["GW"].between(gw_range[0], gw_range[1])
+            ],
+            x="GW",
+            y=y_axis_option,
+            color="Manager",
+            color_discrete_sequence=px.colors.qualitative.Plotly,
+            markers=True,
+        )
+        return fig
+
+    def make_similarity_heatmap(self, sim_df):
+        heatmap_colourscale = [
+            [0, "rgba(61,23,90,255)"],
+            [0.35, "rgba(70,160,246,255)"],
+            [1, "rgba(72,250,137,255)"],
+        ]
+        fig = px.imshow(
+            sim_df,
+            text_auto=False,
+            aspect="auto",
+            color_continuous_scale=heatmap_colourscale,
+            zmax=1.0,
+            zmin=0.0,
+            labels=dict(x="Manager 1", y="Manager 2", color="Similarity"),
+        )
+        return fig
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def make_transfers_fig(self):
+        fig = (
+            px.scatter(
+                self.transfers_df,
+                x="time",
+                y="Manager",
+                color="Manager",
+                color_discrete_sequence=px.colors.qualitative.Plotly,
+                hover_name=None,
+                hover_data={
+                    "Manager": True,
+                    "time": False,
+                    "Player_in": True,
+                    "Player_in_cost": True,
+                    "Player_out": True,
+                    "Player_out_cost": True,
+                    "GW": False,
+                },
+            )
+            .update_xaxes(
+                rangeslider_visible=True,
+                range=[
+                    str(
+                        self.bootstrap_static_events_df.loc[
+                            self.max_gw - 2, "deadline_time"
+                        ]
+                    )[:10],
+                    str(
+                        self.bootstrap_static_events_df.loc[
+                            self.max_gw, "deadline_time"
+                        ]
+                    )[:10],
+                ],
+            )
+            .update_layout(
+                showlegend=True, yaxis_type="category", hovermode="x unified"
+            )
+        )
+        for gw in range(1, 39):
+            fig.add_vline(
+                x=datetime.datetime.strptime(
+                    self.bootstrap_static_events_df.loc[gw - 1, "deadline_time"], "%Y-%m-%dT%H:%M:%SZ"  # type: ignore
+                ).timestamp()
+                * 1000,
+                line_width=1,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"Gameweek {gw} Deadline",
+                annotation_position="top",
+            )
+        return fig
+
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def _get_players_df(self):
+        all_players_all_gw_list = []
+        for gw in range(1, self.max_gw):
+            response_json = self._get_requests_response(
+                url_template=self.live_url_template, gw=gw
+            )
+            all_players_dict_list = []
+            for result_dict in response_json["elements"]:
+                player_id = result_dict["id"]
+                stats_dict = result_dict["stats"]
+                stats_dict["player_id"] = player_id
+                stats_dict["web_name"] = self.player_id_name_dict[player_id]
+                all_players_dict_list.append(stats_dict)
+            all_players_df = pd.DataFrame(all_players_dict_list)
+            all_players_df["gw"] = gw
+            all_players_all_gw_list.append(all_players_df)
+        players_df = (
+            pd.concat(all_players_all_gw_list)
+            # .loc[:, ["player_id", "web_name", "gw", "total_points"]]
+            .reset_index(drop=True)
+        )
+        return players_df
 
     @st.cache_data(ttl=3600, show_spinner=False)
     def _get_transfers_df(self) -> pd.DataFrame:
