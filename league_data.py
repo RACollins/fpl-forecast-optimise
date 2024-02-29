@@ -67,13 +67,89 @@ class LeagueData:
         with st.spinner(
             text="(2/2) Collecting and processing team selection data, might take a while..."
         ):
-            self.league_teams_df, self.league_picks_df = self._get_picks_and_teams_dfs()
+            self.league_teams_df = self._get_teams_dfs()
 
         ### Transfers
         self.transfers_df = self._get_transfers_df()
 
         ### Players
         self.players_df = self._get_players_df()
+
+    def add_what_if_managers(self, what_if_gw):
+        ### Extend league_teams_df
+        self.league_teams_df = self._extend_league_teams_df(what_if_gw)
+        ### Season stats
+        self.season_stats_df = self._recalc_season_stats(what_if_gw)
+
+        ### Standings
+
+        return None
+
+    def _recalc_season_stats(self, what_if_gw) -> pd.DataFrame:
+        ### Merge player points to league_teams_df
+        self.league_teams_df = pd.merge(
+            left=self.league_teams_df,
+            right=self.players_df,
+            left_on=["element", "gw"],
+            right_on=["player_id", "gw"],
+            how="left",
+        )
+        ### Calculate earned points
+        self.league_teams_df["earned_points"] = (
+            self.league_teams_df["total_points"] * self.league_teams_df["multiplier"]
+        )
+        ### What if season stats to concat
+        what_if_season_stats_df = pd.DataFrame(
+            self.league_teams_df.groupby(["Manager", "gw"])["earned_points"].sum()
+        )
+        st.write("what_if_season_stats_df")
+        st.write(what_if_season_stats_df)
+        what_if_season_stats_df = what_if_season_stats_df.rename(
+            columns={"gw": "GW", "earned_points": "Points"}
+        ).reset_index()
+        st.write("what_if_season_stats_df")
+        st.write(what_if_season_stats_df)
+        ### Fill in other columns withh np.nan
+        for col in self.season_stats_df.columns:
+            if col in what_if_season_stats_df.columns:
+                continue
+            what_if_season_stats_df[col] = np.nan
+        st.write("what_if_season_stats_df")
+        st.write(what_if_season_stats_df)
+
+        recalc_season_stats_df = pd.concat(
+            [self.season_stats_df, what_if_season_stats_df]
+        )
+
+        return recalc_season_stats_df
+
+    def _extend_league_teams_df(self, what_if_gw) -> pd.DataFrame:
+        what_if_league_df = self.league_teams_df.copy()
+        what_if_league_df["Manager"] = (
+            what_if_league_df["Manager"].astype(str) + " (what if)"
+        )
+        gw_to_repeat = what_if_league_df.loc[what_if_league_df["gw"] == what_if_gw, :]
+        repeated_section = pd.concat(
+            [gw_to_repeat] * (self.max_gw - what_if_gw),
+            ignore_index=True,
+        )
+        repeated_section["gw"] = np.repeat(
+            list(range(what_if_gw + 1, self.max_gw + 1)),
+            15 * len(self.manager_id_name_dict),
+        )
+        repeated_section["player_pick_full"] = list(
+            (
+                repeated_section["player_pick"] + repeated_section["gw"].astype(str)
+            ).values
+        )
+        what_if_league_df = pd.concat(
+            [
+                what_if_league_df.loc[what_if_league_df["gw"] <= what_if_gw, :],
+                repeated_section,
+            ]
+        )
+        extended_league_teams_df = pd.concat([self.league_teams_df, what_if_league_df])
+        return extended_league_teams_df
 
     def make_season_stats_chart(self, gw_range, y_axis_option):
         fig = px.line(
@@ -161,7 +237,7 @@ class LeagueData:
     @st.cache_data(ttl=3600, show_spinner=False)
     def _get_players_df(self):
         all_players_all_gw_list = []
-        for gw in range(1, self.max_gw):
+        for gw in range(1, self.max_gw + 1):
             response_json = self._get_requests_response(
                 url_template=self.live_url_template, gw=gw
             )
@@ -215,7 +291,7 @@ class LeagueData:
         return transfers_df
 
     @st.cache_data(ttl=3600, show_spinner=False)
-    def _get_picks_and_teams_dfs(self) -> tuple:
+    def _get_teams_dfs(self) -> pd.DataFrame:
         league_teams_df_list = []
         league_picks_dict = {}
         managers_completed = st.empty()
@@ -234,7 +310,9 @@ class LeagueData:
                     self.picks_url_template, manager_id=manager_id, gw=gw
                 )
                 picks_df = pd.DataFrame(team_selection_response_json["picks"])
-                picks_df["element"] = picks_df["element"].map(self.player_id_name_dict)
+                picks_df["player_name"] = picks_df["element"].map(
+                    self.player_id_name_dict
+                )
                 picks_df["Manager"] = manager_name
                 picks_df["gw"] = gw
                 picks_df["status"] = np.where(
@@ -258,7 +336,7 @@ class LeagueData:
                 )
                 picks_df["player_pick"] = list(
                     (
-                        picks_df["element"]
+                        picks_df["player_name"]
                         + " ("
                         + picks_df["status"].astype(str)
                         + ")"
@@ -268,9 +346,6 @@ class LeagueData:
                     (picks_df["player_pick"] + picks_df["gw"].astype(str)).values
                 )
                 league_teams_df_list.append(picks_df)
-                league_picks_dict[manager_name] += list(
-                    (picks_df["player_pick_full"]).values
-                )
                 gws_completed.text(
                     "({0}/{1}) Gameweeks completed".format(j, self.max_gw)
                 )
@@ -294,8 +369,7 @@ class LeagueData:
         prog_bar.empty()
 
         league_teams_df = pd.concat(league_teams_df_list).reset_index(drop=True)
-        league_picks_df = pd.DataFrame(league_picks_dict)
-        return league_teams_df, league_picks_df
+        return league_teams_df
 
     @st.cache_data(ttl=3600, show_spinner=False)
     def _get_season_stats_df(self) -> pd.DataFrame:

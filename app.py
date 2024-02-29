@@ -5,6 +5,7 @@ import plotly.express as px
 import os
 import utils
 from league_data import LeagueData
+import pandas as pd
 
 root_dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -129,8 +130,9 @@ def main():
                     value=ldo.max_gw - 1,
                     step=1,
                     min_value=1,
-                    max_value=ldo.max_gw,
+                    max_value=ldo.max_gw - 1,
                 )
+            ldo.add_what_if_managers(what_if_gw)
 
         ### Side bar
         with st.sidebar:
@@ -176,8 +178,8 @@ def main():
 
         st.dataframe(ldo.players_df)
         st.dataframe(ldo.league_teams_df)
-        st.dataframe(ldo.league_picks_df)
-        
+        st.dataframe(ldo.season_stats_df)
+
         with tab1:
             st.header(f"{ldo.league_name}")
             ldo.standings_df = ldo.standings_df.merge(
@@ -264,14 +266,18 @@ def main():
                 else:
                     gw_select_indx = []
 
-                sim_df = utils.jaccard_sim(ldo.league_picks_df.iloc[gw_select_indx])
+                league_picks_df = ldo.league_teams_df.assign(
+                    idx=ldo.league_teams_df.groupby("Manager").cumcount()
+                ).pivot(index="idx", columns="Manager", values="player_pick_full")
+
+                sim_df = utils.jaccard_sim(league_picks_df.iloc[gw_select_indx])
                 fig = ldo.make_similarity_heatmap(sim_df=sim_df)
                 st.plotly_chart(fig, theme="streamlit", use_container_width=True)
         with tab4:
             st.header(f"{ldo.league_name}")
             with st.container(border=True):
                 if gw_type == "Single Gameweek":
-                    managers = ldo.standings_df["Manager"].values
+                    managers = ldo.league_teams_df["Manager"].unique()
                     gw_range = st.slider(
                         "Select Gameweek",
                         1,
