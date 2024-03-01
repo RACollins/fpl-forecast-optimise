@@ -7,6 +7,13 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import utils
+from ast import literal_eval
+
+
+#################
+### Constants ###
+#################
+
 
 col_name_change_dict = {
     "event": "GW",
@@ -31,6 +38,43 @@ col_name_change_dict = {
     "element_in_cost": "Player_in_cost",
     "element_out_cost": "Player_out_cost",
 }
+hex_plotly_colour_list = [
+    "#636EFA",
+    "#EF553B",
+    "#00CC96",
+    "#AB63FA",
+    "#FFA15A",
+    "#19D3F3",
+    "#FF6692",
+    "#B6E880",
+    "#FF97FF",
+    "#FECB52",
+]
+rgba_plotly_colour_list = [
+    "rgba(99, 110, 250, 1)",
+    "rgba(239, 85, 59, 1)",
+    "rgba(0, 204, 150, 1)",
+    "rgba(171, 99, 250, 1)",
+    "rgba(255, 161, 90, 1)",
+    "rgba(25, 211, 243, 1)",
+    "rgba(255, 102, 146, 1)",
+    "rgba(182, 232, 128, 1)",
+    "rgba(255, 151, 255, 1)",
+    "rgba(254, 203, 82, 1)",
+]
+low_alpha_plotly_colour_list = [
+    c.replace("1)", "0.33)") for c in rgba_plotly_colour_list
+]
+combined_plotly_colour_list = [
+    j for i in zip(rgba_plotly_colour_list, low_alpha_plotly_colour_list) for j in i
+]
+rgba_tuples_list = [
+    literal_eval(c.replace("rgba", "")) for c in combined_plotly_colour_list
+]
+
+###############
+### Classes ###
+###############
 
 
 @dataclass
@@ -94,32 +138,88 @@ class LeagueData:
             right_on=["player_id", "gw"],
             how="left",
         )
+
         ### Calculate earned points
         self.league_teams_df["earned_points"] = (
             self.league_teams_df["total_points"] * self.league_teams_df["multiplier"]
         )
-        ### What if season stats to concat
-        what_if_season_stats_df = pd.DataFrame(
-            self.league_teams_df.groupby(["Manager", "gw"])["earned_points"].sum()
-        )
-        st.write("what_if_season_stats_df")
-        st.write(what_if_season_stats_df)
-        what_if_season_stats_df = what_if_season_stats_df.rename(
-            columns={"gw": "GW", "earned_points": "Points"}
-        ).reset_index()
-        st.write("what_if_season_stats_df")
-        st.write(what_if_season_stats_df)
-        ### Fill in other columns withh np.nan
-        for col in self.season_stats_df.columns:
-            if col in what_if_season_stats_df.columns:
-                continue
-            what_if_season_stats_df[col] = np.nan
-        st.write("what_if_season_stats_df")
-        st.write(what_if_season_stats_df)
 
-        recalc_season_stats_df = pd.concat(
-            [self.season_stats_df, what_if_season_stats_df]
+        ### Calculate Points
+        what_if_season_stats_df = (
+            (
+                self.league_teams_df.groupby(["Manager", "gw"])["earned_points"]
+                .sum()
+                .to_frame(name="earned_points")
+                .reset_index()
+            )
+            .rename(columns={"gw": "GW", "earned_points": "Points"})
+            .reset_index(drop=True)
         )
+
+        ### Drop non "what if" managers
+        what_if_season_stats_df = what_if_season_stats_df[
+            what_if_season_stats_df["Manager"].str.contains("(?:what if)")
+        ]
+
+        ### Merge in transfers and costs
+        what_if_season_stats_df["Manager"] = what_if_season_stats_df[
+            "Manager"
+        ].str.replace(" (what if)", "")
+        what_if_season_stats_df = pd.merge(
+            left=what_if_season_stats_df,
+            right=self.season_stats_df.loc[
+                :,
+                [
+                    "Manager",
+                    "GW",
+                    "Transfers",
+                    "Transfer Costs",
+                    "Total Transfers",
+                    "Total Transfer Costs",
+                ],
+            ],
+            on=["Manager", "GW"],
+            how="left",
+        )
+        what_if_season_stats_df["Manager"] = (
+            what_if_season_stats_df["Manager"].astype(str) + " (what if)"
+        )
+        for transfer_col in ["Transfers", "Transfer Costs"]:
+            what_if_season_stats_df[transfer_col] = np.where(
+                what_if_season_stats_df["GW"] > what_if_gw,
+                0,
+                what_if_season_stats_df[transfer_col],
+            )
+        for total_transfer_col in ["Total Transfers", "Total Transfer Costs"]:
+            what_if_season_stats_df[total_transfer_col] = np.where(
+                what_if_season_stats_df["GW"] > what_if_gw,
+                np.nan,
+                what_if_season_stats_df[total_transfer_col],
+            )
+            what_if_season_stats_df[total_transfer_col] = what_if_season_stats_df[
+                total_transfer_col
+            ].ffill()
+
+        ### Calculate Total Points
+        what_if_season_stats_df["Total Points"] = (
+            what_if_season_stats_df.groupby(["Manager"])["Points"].transform(
+                pd.Series.cumsum
+            )
+            - what_if_season_stats_df["Total Transfer Costs"]
+        )
+
+        ### Concat with regular managers
+        recalc_season_stats_df = pd.concat(
+            [self.season_stats_df, what_if_season_stats_df],
+            ignore_index=True,
+            join="outer",
+        ).sort_values(by=["Manager", "GW"])
+
+        ### Recalculate league rank as "Rank"
+        # recalc_season_stats_df["Rank"] = np.nan
+        recalc_season_stats_df["Rank"] = recalc_season_stats_df.groupby("GW")[
+            "Total Points"
+        ].rank(method="min", ascending=False)
 
         return recalc_season_stats_df
 
@@ -152,6 +252,10 @@ class LeagueData:
         return extended_league_teams_df
 
     def make_season_stats_chart(self, gw_range, y_axis_option):
+        if self.season_stats_df["Manager"].str.contains("what if").any():
+            colour_list = combined_plotly_colour_list
+        else:
+            colour_list = hex_plotly_colour_list
         fig = px.line(
             self.season_stats_df[
                 self.season_stats_df["GW"].between(gw_range[0], gw_range[1])
@@ -159,7 +263,7 @@ class LeagueData:
             x="GW",
             y=y_axis_option,
             color="Manager",
-            color_discrete_sequence=px.colors.qualitative.Plotly,
+            color_discrete_sequence=colour_list,
             markers=True,
         )
         return fig
@@ -419,7 +523,7 @@ class LeagueData:
         season_stats_df["Form"] = season_stats_df.groupby("Manager")[
             "Points"
         ].transform(lambda s: s.rolling(4, min_periods=1).mean().div(12))
-        return season_stats_df
+        return season_stats_df.sort_values(by=["Manager", "GW"])
 
     @st.cache_data
     def _get_league_name_and_standings(self) -> tuple:

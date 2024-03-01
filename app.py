@@ -1,11 +1,13 @@
 import streamlit as st
 import datetime as datetime
 import numpy as np
-import plotly.express as px
 import os
 import utils
-from league_data import LeagueData
-import pandas as pd
+from league_data import (
+    LeagueData,
+    hex_plotly_colour_list,
+    combined_plotly_colour_list,
+)
 
 root_dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -176,9 +178,9 @@ def main():
             [tab_headers[k] for k, v in tab_headers.items()]
         )
 
-        st.dataframe(ldo.players_df)
-        st.dataframe(ldo.league_teams_df)
-        st.dataframe(ldo.season_stats_df)
+        # st.dataframe(ldo.players_df)
+        # st.dataframe(ldo.league_teams_df)
+        # st.dataframe(ldo.season_stats_df)
 
         with tab1:
             st.header(f"{ldo.league_name}")
@@ -277,7 +279,13 @@ def main():
             st.header(f"{ldo.league_name}")
             with st.container(border=True):
                 if gw_type == "Single Gameweek":
-                    managers = ldo.league_teams_df["Manager"].unique()
+                    managers = np.sort(ldo.league_teams_df["Manager"].unique())
+                    if any("what if" in manager for manager in managers):
+                        colour_list = list(np.repeat(hex_plotly_colour_list, 2))
+                        alpha_list = [1.0, 0.33] * int((len(managers) / 2))
+                    else:
+                        colour_list = hex_plotly_colour_list
+                        alpha_list = [1.0] * int(len(managers))
                     gw_range = st.slider(
                         "Select Gameweek",
                         1,
@@ -317,16 +325,22 @@ def main():
                         for s in manager2_set.difference(manager1_set)
                     ]
                     words = manager1_players + intersection_players + manager2_players
-                    colour1_idx = np.where(managers == manager1)[0][0] % 10
-                    colour2_idx = np.where(managers == manager2)[0][0] % 10
+                    colour1_idx = np.where(managers == manager1)[0][0] % len(
+                        colour_list
+                    )
+                    colour2_idx = np.where(managers == manager2)[0][0] % len(
+                        colour_list
+                    )
                     venn = utils.word_list_venn_diagram(
                         words=words,
                         fontsizes=[10] * len(words),
                         polarities=[-1] * len(manager1_players)
                         + [0] * len(intersection_players)
                         + [1] * len(manager2_players),
-                        colour1=px.colors.qualitative.Plotly[colour1_idx],
-                        colour2=px.colors.qualitative.Plotly[colour2_idx],
+                        colour1=colour_list[colour1_idx],
+                        colour2=colour_list[colour2_idx],
+                        alpha1=alpha_list[colour1_idx],
+                        alpha2=alpha_list[colour2_idx],
                         scale=1.5,
                     )
                     venn_fig = venn.fig
