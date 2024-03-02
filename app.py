@@ -139,7 +139,7 @@ def main():
         ### Side bar
         with st.sidebar:
             tab_headers = {
-                "tab1": "Summary",
+                "tab1": "Standings",
                 "tab2": "Season Stats.",
                 "tab3": "Team Similarity",
                 "tab4": "Team Comparison",

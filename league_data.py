@@ -100,7 +100,7 @@ class LeagueData:
         )
 
         ### Season stats
-        with st.spinner(text="(1/2) Collecting and processing season statistics..."):
+        with st.spinner(text="(1/3) Collecting and processing season statistics..."):
             self.season_stats_df = self._get_season_stats_df()
         self.max_gw = self.season_stats_df["GW"].max()
 
@@ -109,7 +109,7 @@ class LeagueData:
 
         ### Manager teams
         with st.spinner(
-            text="(2/2) Collecting and processing team selection data, might take a while..."
+            text="(2/3) Collecting and processing team selection data, might take a while..."
         ):
             self.league_teams_df = self._get_teams_dfs()
 
@@ -117,17 +117,54 @@ class LeagueData:
         self.transfers_df = self._get_transfers_df()
 
         ### Players
-        self.players_df = self._get_players_df()
+        with st.spinner(
+            text="(3/3) Collecting and processing player data, almost there..."
+        ):
+            self.players_df = self._get_players_df()
 
     def add_what_if_managers(self, what_if_gw):
         ### Extend league_teams_df
         self.league_teams_df = self._extend_league_teams_df(what_if_gw)
         ### Season stats
         self.season_stats_df = self._recalc_season_stats(what_if_gw)
-
         ### Standings
-
+        self.standings_df = self._recalc_standings()
         return None
+
+    def _recalc_standings(self):
+        ### Get "what if" managers' latest gw stats
+        what_if_standings_df = (
+            self.season_stats_df.loc[
+                (self.season_stats_df["GW"] == self.max_gw)
+                & (self.season_stats_df["Manager"].str.contains("(?:what if)")),
+                ["Rank", "Manager", "Points", "Total Points", "Form"],
+            ]
+            .rename(columns={"Points": "GW Total"})
+            .reset_index(drop=True)
+        )
+
+        ### Concat with current standings
+        recalc_standings_df = pd.concat(
+            [self.standings_df, what_if_standings_df],
+            ignore_index=True,
+            join="outer",
+        ).sort_values(by=["Manager"])
+
+        ### Forward fill team names and recalc Rank
+        recalc_standings_df["Team Name"] = recalc_standings_df["Team Name"].ffill()
+        recalc_standings_df["Rank"] = recalc_standings_df["Total Points"].rank(
+            method="min", ascending=False
+        )
+
+        ### Order by Rank
+        recalc_standings_df = recalc_standings_df.sort_values(by="Rank")
+
+        ### Output only necessary columns and change dtype
+        recalc_standings_df = recalc_standings_df[
+            ["Rank", "Manager", "Team Name", "GW Total", "Total Points"]
+        ].astype({"Rank": "int32", "Total Points": "int32"})
+
+        return recalc_standings_df
 
     def _recalc_season_stats(self, what_if_gw) -> pd.DataFrame:
         ### Merge player points to league_teams_df
@@ -139,12 +176,17 @@ class LeagueData:
             how="left",
         )
 
-        ### Calculate earned points
+        ### Calculate earned points and benched points
         self.league_teams_df["earned_points"] = (
             self.league_teams_df["total_points"] * self.league_teams_df["multiplier"]
         )
+        self.league_teams_df["benched_points"] = np.where(
+            self.league_teams_df["multiplier"] == 0,
+            self.league_teams_df["total_points"],
+            0,
+        )
 
-        ### Calculate Points
+        ### Calculate Points per gw
         what_if_season_stats_df = (
             (
                 self.league_teams_df.groupby(["Manager", "gw"])["earned_points"]
@@ -160,6 +202,21 @@ class LeagueData:
         what_if_season_stats_df = what_if_season_stats_df[
             what_if_season_stats_df["Manager"].str.contains("(?:what if)")
         ]
+
+        ### Calculate Points on Bench and merge
+        pob_df = (
+            (
+                self.league_teams_df.groupby(["Manager", "gw"])["benched_points"]
+                .sum()
+                .to_frame(name="benched_points")
+                .reset_index()
+            )
+            .rename(columns={"gw": "GW", "benched_points": "Points on Bench"})
+            .reset_index(drop=True)
+        )
+        what_if_season_stats_df = pd.merge(
+            what_if_season_stats_df, pob_df, on=["Manager", "GW"], how="left"
+        )
 
         ### Merge in transfers and costs
         what_if_season_stats_df["Manager"] = what_if_season_stats_df[
@@ -207,6 +264,12 @@ class LeagueData:
             )
             - what_if_season_stats_df["Total Transfer Costs"]
         )
+        ### Calculate Total Points on Bench
+        what_if_season_stats_df["Total Points on Bench"] = (
+            what_if_season_stats_df.groupby(["Manager"])["Points on Bench"].transform(
+                pd.Series.cumsum
+            )
+        )
 
         ### Concat with regular managers
         recalc_season_stats_df = pd.concat(
@@ -216,10 +279,14 @@ class LeagueData:
         ).sort_values(by=["Manager", "GW"])
 
         ### Recalculate league rank as "Rank"
-        # recalc_season_stats_df["Rank"] = np.nan
         recalc_season_stats_df["Rank"] = recalc_season_stats_df.groupby("GW")[
             "Total Points"
         ].rank(method="min", ascending=False)
+
+        ### Recalculate "Form"
+        recalc_season_stats_df["Form"] = recalc_season_stats_df.groupby("Manager")[
+            "Points"
+        ].transform(lambda s: s.rolling(4, min_periods=1).mean().div(12))
 
         return recalc_season_stats_df
 
@@ -523,6 +590,7 @@ class LeagueData:
         season_stats_df["Form"] = season_stats_df.groupby("Manager")[
             "Points"
         ].transform(lambda s: s.rolling(4, min_periods=1).mean().div(12))
+
         return season_stats_df.sort_values(by=["Manager", "GW"])
 
     @st.cache_data
