@@ -42,7 +42,7 @@ def human_readable(num):
 
 class word_list_venn_diagram(object):
 
-    def __init__(self, words, fontsizes, polarities, colour1="#46A0F8", colour2="#FF2E63", scale=1.0):
+    def __init__(self, words, fontsizes, polarities, colour1="#46A0F8", colour2="#FF2E63", alpha1=1.0, alpha2=1.0, scale=1.0):
         """
         Arguments:
         ----------
@@ -68,6 +68,8 @@ class word_list_venn_diagram(object):
         self.fontsizes = np.array(fontsizes)
         self.colour1 = str(colour1)
         self.colour2 = str(colour2)
+        self.alpha1 = float(alpha1)
+        self.alpha2 = float(alpha2)
 
         # get bounding boxes of text
         self.bboxes = [
@@ -124,6 +126,7 @@ class word_list_venn_diagram(object):
         circle_left = plt.Circle(  # type: ignore
             (-0.5 * self.radius, 0),
             self.radius,
+            alpha=self.alpha1,
             color=self.colour1,
             fill=False,
             axes=ax,
@@ -132,6 +135,7 @@ class word_list_venn_diagram(object):
         circle_right = plt.Circle(  # type: ignore
             (+0.5 * self.radius, 0),
             self.radius,
+            alpha=self.alpha2,
             color=self.colour2,
             fill=False,
             axes=ax,
