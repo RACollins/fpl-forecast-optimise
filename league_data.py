@@ -424,7 +424,7 @@ class LeagueData:
             all_players_all_gw_list.append(all_players_df)
         players_df = (
             pd.concat(all_players_all_gw_list)
-            .loc[:, ["player_id", "web_name", "gw", "total_points"]]
+            .loc[:, ["player_id", "web_name", "gw", "total_points"]] # type: ignore
             .reset_index(drop=True)
         )
         return players_df
