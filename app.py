@@ -178,10 +178,6 @@ def main():
             [tab_headers[k] for k, v in tab_headers.items()]
         )
 
-        # st.dataframe(ldo.players_df)
-        # st.dataframe(ldo.league_teams_df)
-        # st.dataframe(ldo.season_stats_df)
-
         with tab1:
             st.header(f"{ldo.league_name}")
             ldo.standings_df = ldo.standings_df.merge(
